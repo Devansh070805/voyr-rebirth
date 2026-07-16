@@ -1,0 +1,63 @@
+﻿version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: voyr-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: voyr
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: voyr-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: "3001"
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/voyr
+      CORS_ORIGIN: "*"
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      # AI Provider
+      AI_PROVIDER: ${AI_PROVIDER:-deepseek}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Data Source APIs
+      GEOAPIFY_API_KEY: ${GEOAPIFY_API_KEY:-}
+      MAKCORPS_API_KEY: ${MAKCORPS_API_KEY:-}
+      AVIATION_STACK_API_KEY: ${AVIATION_STACK_API_KEY:-}
+      TINYFISH_API_KEY: ${TINYFISH_API_KEY:-}
+      # Payment
+      PAYMENT_MODE: ${PAYMENT_MODE:-mock}
+      # Email
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-Voyr <onboarding@resend.dev>}
+      # Database pool
+      DB_POOL_MAX: "20"
+      DB_IDLE_TIMEOUT: "30000"
+      DB_CONNECT_TIMEOUT: "5000"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Mount migrations so they can be run at runtime
+      - ./backend/src/db/migrations:/app/src/db/migrations
+
+volumes:
+  pgdata:

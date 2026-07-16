@@ -1,0 +1,48 @@
+{
+  "name": "@voyr/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "npm run build --workspace=@voyr/shared && tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "migrate:up": "node scripts/migrate-up.mjs",
+    "migrate": "npm run migrate:up",
+    "migrate:down": "node-pg-migrate down --migrations-dir src/db/migrations --migration-file-language ts --tsx",
+    "db:verify": "node scripts/verify-db.mjs",
+    "migrate:create": "node-pg-migrate create --migrations-dir src/db/migrations --migration-file-language ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1062.0",
+    "@sentry/node": "^10.56.0",
+    "@sentry/profiling-node": "^10.56.0",
+    "@voyr/shared": "file:../shared",
+    "@types/pdfkit": "^0.17.6",
+    "dotenv": "16.4.7",
+    "express": "4.22.2",
+    "google-auth-library": "^10.6.2",
+    "jsonwebtoken": "9.0.2",
+    "node-pg-migrate": "^8.0.4",
+    "pdfkit": "^0.18.0",
+    "pg": "8.13.1",
+    "pino": "^10.3.1",
+    "redis": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.0",
+    "@types/jsonwebtoken": "9.0.7",
+    "@types/node": "22.10.5",
+    "@types/pg": "8.11.10",
+    "@typescript-eslint/eslint-plugin": "8.19.1",
+    "@typescript-eslint/parser": "8.19.1",
+    "eslint": "9.39.4",
+    "fast-check": "3.23.2",
+    "tsx": "4.21.0",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}

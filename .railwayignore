@@ -1,0 +1,6 @@
+frontend/
+gateway/
+.git/
+.cursor/
+node_modules/
+**/node_modules/

@@ -1,0 +1,10 @@
+﻿# Cloudflare Workers Builds entry — keep `name` in sync with gateway/wrangler.toml.
+# GitHub Actions deploys from gateway/ using the same worker name.
+name = "voyr-travel-ops"
+main = "gateway/src/index.ts"
+compatibility_date = "2024-12-30"
+
+# Production backend (Railway). Local: gateway/.dev.vars
+[vars]
+BACKEND_ORIGIN = "https://voyr-backend-production.up.railway.app"
+CORS_ORIGIN = "https://voyr-frontend.pages.dev"

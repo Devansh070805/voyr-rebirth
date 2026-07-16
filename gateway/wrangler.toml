@@ -1,0 +1,21 @@
+﻿# Primary worker name — keep in sync with root wrangler.toml (Cloudflare Workers Builds)
+name = "voyr-travel-ops"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+
+# ─── Environment Variables ───────────────────────────────────────────────────
+# Production backend (Railway). Local dev overrides via gateway/.dev.vars → localhost:3001
+[vars]
+BACKEND_ORIGIN = "https://voyr-backend-production.up.railway.app"
+CORS_ORIGIN = "https://voyr-frontend.pages.dev"
+
+# ─── Production Environment ──────────────────────────────────────────────────
+[env.production]
+name = "voyr-travel-ops-production"
+routes = [
+  { pattern = "api.voyr.com/*", zone_name = "voyr.com" }
+]
+
+# ─── Staging Environment ─────────────────────────────────────────────────────
+[env.staging]
+name = "voyr-travel-ops-staging"

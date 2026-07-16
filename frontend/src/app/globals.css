@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Animation Utilities ─────────────────────────────────────────────────── */
+
+@layer utilities {
+  /* Staggered animation delays for lists */
+  .stagger-1 {
+    animation-delay: 50ms;
+  }
+  .stagger-2 {
+    animation-delay: 100ms;
+  }
+  .stagger-3 {
+    animation-delay: 150ms;
+  }
+  .stagger-4 {
+    animation-delay: 200ms;
+  }
+  .stagger-5 {
+    animation-delay: 250ms;
+  }
+  .stagger-6 {
+    animation-delay: 300ms;
+  }
+  .stagger-7 {
+    animation-delay: 350ms;
+  }
+  .stagger-8 {
+    animation-delay: 400ms;
+  }
+
+  /* Button press feedback */
+  .btn-press {
+    @apply transition-transform duration-100 active:scale-[0.97];
+  }
+
+  /* Card lift on hover */
+  .card-hover {
+    @apply transition-all duration-150 hover:-translate-y-px hover:shadow-md;
+  }
+
+  /* Scale in with slight bounce */
+  .scale-in-bounce {
+    animation: scaleInBounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  /* Fade in with slide up */
+  .fade-in-up {
+    animation: fadeInUp 0.4s ease-out both;
+  }
+
+  /* Hover lift effect */
+  .hover-lift {
+    @apply transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lg;
+  }
+
+  /* Smooth transition for all interactive elements */
+  .interactive {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  /* Shimmer loading skeleton */
+  .skeleton {
+    @apply animate-shimmer bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100 bg-[length:1000px_100%];
+  }
+}
+
+@keyframes scaleInBounce {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  0% {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ─── Smooth Scrollbar ────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.slate.200') transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: theme('colors.slate.200');
+    border-radius: 0;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.slate.300');
+  }
+
+  /* Smooth scrolling for the entire page */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Focus ring styling for accessibility */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-violet-500;
+  }
+}

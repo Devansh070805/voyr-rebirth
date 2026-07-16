@@ -1,0 +1,56 @@
+{
+  "name": "voyr",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "gateway",
+    "shared"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:gateway": "npm run dev --workspace=gateway",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "deploy": "npm run deploy --workspace=gateway",
+    "deploy:gateway": "npm run deploy --workspace=gateway",
+    "deploy:cloudflare": "powershell -File scripts/deploy-cloudflare.ps1",
+    "deploy:railway:env": "powershell -File scripts/railway-sync-env.ps1",
+    "db:migrate": "npm run migrate:up --workspace=backend",
+    "db:verify": "node backend/scripts/verify-db.mjs",
+    "prepare": "node -e \"if(process.env.HUSKY==='0')process.exit(0);require('child_process').execSync('husky',{stdio:'inherit'})\""
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "overrides": {
+    "eslint": "9.39.4",
+    "@eslint/plugin-kit": "0.3.4",
+    "esbuild": "0.27.7"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ],
+    "*.{css,md,json}": [
+      "prettier --write"
+    ],
+    "*.{yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@next/eslint-plugin-next": "^16.2.6",
+    "@typescript-eslint/typescript-estree": "^8.59.4",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "prettier": "^3.8.3",
+    "wrangler": "^3.114.17"
+  }
+}

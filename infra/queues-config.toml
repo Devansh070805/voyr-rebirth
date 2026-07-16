@@ -1,0 +1,65 @@
+﻿# Cloudflare Queues Configuration for Async Job Processing
+# Queues are bound to workers via wrangler.toml configuration.
+
+# ─── Queue Definitions ───────────────────────────────────────────────────────
+# Create queues via CLI:
+#   wrangler queues create voyr-document-generation
+#   wrangler queues create voyr-notifications
+#   wrangler queues create voyr-document-generation-dlq
+#   wrangler queues create voyr-notifications-dlq
+
+# ─── Document Generation Queue ───────────────────────────────────────────────
+# Queue name: voyr-document-generation
+# Purpose: Async document generation (invoices, itineraries, vouchers)
+# Producer: Backend (booking module on BOOKING_CONFIRMED)
+# Consumer: Backend document worker
+# Retry: 5 attempts with exponential backoff
+# Dead-letter queue: voyr-document-generation-dlq
+#
+# Add to producer worker wrangler.toml:
+# [[queues.producers]]
+# queue = "voyr-document-generation"
+# binding = "DOCUMENT_QUEUE"
+#
+# Add to consumer worker wrangler.toml:
+# [[queues.consumers]]
+# queue = "voyr-document-generation"
+# max_batch_size = 5
+# max_batch_timeout = 30
+# max_retries = 5
+# dead_letter_queue = "voyr-document-generation-dlq"
+
+# ─── Notifications Queue ─────────────────────────────────────────────────────
+# Queue name: voyr-notifications
+# Purpose: Async email notification delivery
+# Producer: Backend (document module on DOCUMENTS_GENERATED)
+# Consumer: Backend notification worker
+# Retry: 3 attempts with exponential backoff
+# Dead-letter queue: voyr-notifications-dlq
+#
+# Add to producer worker wrangler.toml:
+# [[queues.producers]]
+# queue = "voyr-notifications"
+# binding = "NOTIFICATION_QUEUE"
+#
+# Add to consumer worker wrangler.toml:
+# [[queues.consumers]]
+# queue = "voyr-notifications"
+# max_batch_size = 10
+# max_batch_timeout = 15
+# max_retries = 3
+# dead_letter_queue = "voyr-notifications-dlq"
+
+# ─── Dead-Letter Queues ──────────────────────────────────────────────────────
+# DLQ messages are consumed by an admin alerting worker that surfaces
+# failures to the Admin Ops dashboard.
+#
+# [[queues.consumers]]
+# queue = "voyr-document-generation-dlq"
+# max_batch_size = 1
+# max_batch_timeout = 60
+#
+# [[queues.consumers]]
+# queue = "voyr-notifications-dlq"
+# max_batch_size = 1
+# max_batch_timeout = 60

@@ -1,0 +1,11 @@
+# Railway deploy — build from monorepo root (Dockerfile includes shared workspace)
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "docker/backend.Dockerfile"
+watchPatterns = ["backend/**", "shared/**", "docker/backend.Dockerfile"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

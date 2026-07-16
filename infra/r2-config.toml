@@ -1,0 +1,38 @@
+﻿# Cloudflare R2 Bucket Configuration for Document Storage
+# This configuration is applied via the gateway worker or a dedicated worker
+# that handles document uploads.
+
+# ─── R2 Bucket Binding (add to the worker that needs R2 access) ──────────────
+# Add the following to the relevant wrangler.toml:
+#
+# [[r2_buckets]]
+# binding = "DOCUMENTS_BUCKET"
+# bucket_name = "voyr-documents"
+# preview_bucket_name = "voyr-documents-preview"
+
+# ─── Bucket Details ──────────────────────────────────────────────────────────
+# Bucket name: voyr-documents
+# Region hint: auto (Cloudflare selects optimal region)
+# Storage class: Standard
+#
+# ─── Access Control ──────────────────────────────────────────────────────────
+# Public access: Disabled (documents served via signed URLs or worker proxy)
+# CORS: Configured to allow frontend origin only
+#
+# ─── Lifecycle Rules ─────────────────────────────────────────────────────────
+# No automatic deletion — documents are retained indefinitely
+# Consider adding lifecycle rules for temporary/draft documents if needed
+#
+# ─── Create bucket via CLI ───────────────────────────────────────────────────
+# wrangler r2 bucket create voyr-documents
+# wrangler r2 bucket create voyr-documents-preview  (for dev/staging)
+
+# ─── CORS Configuration (apply via dashboard or API) ─────────────────────────
+# [
+#   {
+#     "AllowedOrigins": ["https://voyr-frontend.pages.dev"],
+#     "AllowedMethods": ["GET"],
+#     "AllowedHeaders": ["*"],
+#     "MaxAgeSeconds": 3600
+#   }
+# ]

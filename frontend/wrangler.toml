@@ -1,0 +1,20 @@
+﻿# Cloudflare Pages configuration for Voyr Frontend
+# Note: Cloudflare Pages projects are typically configured via the dashboard
+# or via `wrangler pages` CLI commands. This file documents the configuration.
+
+name = "voyr-frontend"
+compatibility_date = "2024-12-30"
+pages_build_output_dir = "out"
+
+# ─── Build Configuration ─────────────────────────────────────────────────────
+# Build command: npm run build
+# Build output directory: .next (Next.js output)
+# Root directory: frontend/
+
+# ─── Environment Variables (set via dashboard or wrangler pages secret) ──────
+# NEXT_PUBLIC_API_URL = https://api.voyr.com
+# NEXT_PUBLIC_APP_URL = https://voyr.com
+
+# ─── Custom Domains ──────────────────────────────────────────────────────────
+# Production: voyr.com, www.voyr.com
+# Staging: staging.voyr.com
