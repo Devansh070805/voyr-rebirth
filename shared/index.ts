@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @voyr/shared — Common types and constants for Voyr monorepo.
  *
  * Import anywhere in the monorepo via workspace resolution:
@@ -9,3 +9,4 @@ export * from './types/visa.js';
 export * from './types/pricing.js';
 export * from './types/stream.js';
 export * from './types/conversation.js';
+export * from './types/booking.js';

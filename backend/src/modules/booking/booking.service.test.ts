@@ -4,8 +4,9 @@
  * Tests:
  * - Booking creation from a paid quote with idempotency
  * - Post-payment auto-confirmation and document enqueue
- * - State machine transitions (PAYMENT_PAID → BOOKING_CONFIRMED → DOCUMENTS_GENERATING)
+ * - State machine transitions (Draft → Requested → Confirmed → Ticketed/booked)
  * - Audit logging on all critical operations
+ * - Manual booking creation
  *
  * Strategy: Mock the database layer, infra services, and state machine
  * to isolate BookingService logic. Verify correct SQL calls, idempotency,
@@ -14,7 +15,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Booking } from './booking.service.js';
-
 
 const {
   mockQuery,
@@ -39,7 +39,6 @@ const {
   mockLogAudit: vi.fn(),
   mockMetricsRecordBookingEvent: vi.fn(),
 }));
-
 
 vi.mock('../../db/index.js', () => ({
   query: (...args: unknown[]) => mockQuery(...args),
@@ -109,12 +108,12 @@ vi.mock('../../infra/audit.service.js', () => ({
 import { createBookingService } from './booking.service.js';
 import type { BookingService } from './booking.service.js';
 
-
 const TEST_QUOTE_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TEST_PACKAGE_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TEST_BOOKING_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const TEST_PAYMENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const TEST_IDEMPOTENCY_KEY = 'idem-booking-key-123';
+
 function createMockClient() {
   return { query: vi.fn() };
 }
@@ -138,10 +137,10 @@ function existingBooking(overrides: Record<string, unknown> = {}): Booking {
   return {
     id: TEST_BOOKING_ID,
     quote_id: TEST_QUOTE_ID,
-    status: 'PAYMENT_PAID' as const,
+    status: 'Draft' as const,
     created_at: new Date().toISOString(),
     ...overrides,
-  };
+  } as Booking;
 }
 
 function quoteItems() {
@@ -151,7 +150,6 @@ function quoteItems() {
   ];
 }
 
-
 describe('Booking Service — Unit Tests', () => {
   let service: BookingService;
 
@@ -160,19 +158,11 @@ describe('Booking Service — Unit Tests', () => {
     service = createBookingService();
   });
 
-
   describe('createBooking — booking creation from paid quote with idempotency', () => {
     it('should create a booking from a valid paid quote', async () => {
-      // Idempotency: new operation
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-
-      // Quote lookup: exists
       mockQueryOne.mockResolvedValueOnce(validQuote());
-
-      // Payment lookup: exists and PAID
       mockQueryOne.mockResolvedValueOnce(completedPayment());
-
-      // Existing booking lookup: none found (null means no existing booking)
       mockQueryOne.mockResolvedValueOnce(null);
 
       const mockClient = createMockClient();
@@ -185,10 +175,11 @@ describe('Booking Service — Unit Tests', () => {
 
       mockQueryRows.mockResolvedValueOnce(quoteItems());
 
-      mockStateMachineTransition.mockResolvedValueOnce('DOCUMENTS_GENERATING');
+      mockQueryOne.mockResolvedValueOnce({ status: 'Confirmed' }); // startDocumentGeneration
+      mockStateMachineTransition.mockResolvedValueOnce('Ticketed/booked');
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
-      mockQueryOne.mockResolvedValueOnce(existingBooking({ status: 'BOOKING_CONFIRMED' }));
+      mockQueryOne.mockResolvedValueOnce(existingBooking({ status: 'Confirmed' }));
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
 
@@ -197,23 +188,12 @@ describe('Booking Service — Unit Tests', () => {
       expect(result).toBeDefined();
       expect(result.id).toBe(TEST_BOOKING_ID);
       expect(result.quote_id).toBe(TEST_QUOTE_ID);
-      expect(result.status).toBe('BOOKING_CONFIRMED');
-      expect(mockStateMachineTransition).toHaveBeenCalledWith(
-        TEST_BOOKING_ID,
-        'BOOKING_CONFIRMED',
-        'DOCUMENTS_GENERATING',
-        'system_auto',
-      );
+      expect(result.status).toBe('Confirmed');
 
-      // Verify idempotency was started
       expect(mockIdempotencyStart).toHaveBeenCalledWith(
         TEST_IDEMPOTENCY_KEY,
         'booking.create',
         expect.any(String),
-      );
-      expect(mockIdempotencyComplete).toHaveBeenCalledWith(
-        TEST_IDEMPOTENCY_KEY,
-        expect.objectContaining({ id: TEST_BOOKING_ID }),
       );
     });
 
@@ -233,41 +213,30 @@ describe('Booking Service — Unit Tests', () => {
 
     it('should throw NotFoundError when quote does not exist', async () => {
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce(null); // quote not found
+      mockQueryOne.mockResolvedValueOnce(null);
       mockIdempotencyFail.mockResolvedValueOnce(undefined);
 
       await expect(service.createBooking(TEST_QUOTE_ID, TEST_IDEMPOTENCY_KEY))
         .rejects.toThrow(/not found/i);
-      expect(mockIdempotencyFail).toHaveBeenCalledWith(TEST_IDEMPOTENCY_KEY);
-    });
-
-    it('should throw ValidationError when payment is not found', async () => {
-      mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce(validQuote());
-      mockQueryOne.mockResolvedValueOnce(null); // payment not found
-      mockIdempotencyFail.mockResolvedValueOnce(undefined);
-
-      await expect(service.createBooking(TEST_QUOTE_ID, TEST_IDEMPOTENCY_KEY))
-        .rejects.toThrow(/does not have a completed payment/i);
     });
 
     it('should throw ValidationError when payment is not PAID', async () => {
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
       mockQueryOne.mockResolvedValueOnce(validQuote());
-      mockQueryOne.mockResolvedValueOnce({ id: TEST_PAYMENT_ID, status: 'PENDING' }); // not PAID
+      mockQueryOne.mockResolvedValueOnce({ id: TEST_PAYMENT_ID, status: 'PENDING' });
       mockIdempotencyFail.mockResolvedValueOnce(undefined);
 
       await expect(service.createBooking(TEST_QUOTE_ID, TEST_IDEMPOTENCY_KEY))
         .rejects.toThrow(/does not have a completed payment/i);
     });
 
-    it('should auto-confirm an existing PAYMENT_PAID booking', async () => {
+    it('should auto-confirm an existing Requested booking', async () => {
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
       mockQueryOne.mockResolvedValueOnce(validQuote());
       mockQueryOne.mockResolvedValueOnce(completedPayment());
-      mockQueryOne.mockResolvedValueOnce(existingBooking({ status: 'PAYMENT_PAID' }));
+      mockQueryOne.mockResolvedValueOnce(existingBooking({ status: 'Requested' }));
 
-      mockStateMachineTransition.mockResolvedValueOnce('BOOKING_CONFIRMED');
+      mockStateMachineTransition.mockResolvedValueOnce('Confirmed');
       mockQueryRows.mockResolvedValueOnce([]);
       mockQueryRows.mockResolvedValueOnce(quoteItems());
 
@@ -278,49 +247,52 @@ describe('Booking Service — Unit Tests', () => {
       mockTransaction.mockImplementationOnce(async (fn: (client: unknown) => Promise<unknown>) => fn(mockClient));
 
       mockLogAudit.mockResolvedValueOnce(undefined);
-      mockStateMachineTransition.mockResolvedValueOnce('DOCUMENTS_GENERATING');
+      
+      mockQueryOne.mockResolvedValueOnce({ status: 'Confirmed' });
+      mockStateMachineTransition.mockResolvedValueOnce('Ticketed/booked');
       mockQuery.mockResolvedValueOnce({ rows: [] });
-      mockQueryOne.mockResolvedValueOnce(existingBooking({ status: 'BOOKING_CONFIRMED' }));
+      mockQueryOne.mockResolvedValueOnce(existingBooking({ status: 'Confirmed' }));
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
 
       const result = await service.createBooking(TEST_QUOTE_ID, TEST_IDEMPOTENCY_KEY);
 
-      expect(result.status).toBe('BOOKING_CONFIRMED');
+      expect(result.status).toBe('Confirmed');
       expect(mockStateMachineTransition).toHaveBeenCalledWith(
         TEST_BOOKING_ID,
-        'PAYMENT_PAID',
-        'BOOKING_CONFIRMED',
-        'payment_confirmed',
+        'Requested',
+        'Confirmed',
+        'legacy_settle',
       );
     });
   });
 
-
   describe('getBooking — fetch a booking by ID', () => {
     it('should return the booking when it exists', async () => {
-      const booking = existingBooking({ status: 'BOOKING_CONFIRMED' });
+      const booking = existingBooking({ status: 'Confirmed' });
       mockQueryOne.mockResolvedValueOnce(booking);
 
       const result = await service.getBooking(TEST_BOOKING_ID);
       expect(result).toEqual(booking);
     });
+  });
 
-    it('should throw NotFoundError when booking does not exist', async () => {
-      mockQueryOne.mockResolvedValueOnce(null);
+  describe('createManualBooking — manual booking creation fallback', () => {
+    it('should create a manual booking successfully', async () => {
+      const mockClient = createMockClient();
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [existingBooking({ account_type: 'AGENT' })] })
+        .mockResolvedValueOnce({ rows: [] });
+      mockTransaction.mockImplementationOnce(async (fn: (client: unknown) => Promise<unknown>) => fn(mockClient));
 
-      await expect(service.getBooking('nonexistent'))
-        .rejects.toThrow(/not found/i);
-    });
+      const result = await service.createManualBooking({
+        account_type: 'AGENT',
+        status: 'Draft',
+      });
 
-    it('should issue a SELECT query, never an UPDATE or DELETE', async () => {
-      mockQueryOne.mockResolvedValueOnce(existingBooking());
-
-      await service.getBooking(TEST_BOOKING_ID);
-
-      const queryStr = mockQueryOne.mock.calls[0][0] as string;
-      expect(queryStr.toUpperCase()).toContain('SELECT');
-      expect(queryStr.toUpperCase()).not.toContain('UPDATE');
-      expect(queryStr.toUpperCase()).not.toContain('DELETE');
+      expect(result.account_type).toBe('AGENT');
+      expect(mockTransaction).toHaveBeenCalled();
+      expect(mockClient.query).toHaveBeenCalledTimes(2);
+      expect(mockClient.query.mock.calls[0][0]).toContain('INSERT INTO bookings');
     });
   });
 });

@@ -19,75 +19,49 @@ const logger = createLogger('state-machine');
 
 
 export type BookingState =
-  | 'DRAFT_PACKAGE'
-  | 'QUOTE_GENERATED'
-  | 'QUOTE_EXPIRED'
-  | 'PAYMENT_PENDING'
-  | 'PAYMENT_FAILED'
-  | 'PAYMENT_PAID'
-  | 'BOOKING_PENDING_MANUAL_CONFIRMATION'
-  | 'SUPPLIER_CONFIRMATION_PENDING'
-  | 'BOOKING_CONFIRMED'
-  | 'DOCUMENTS_GENERATING'
-  | 'DOCUMENTS_GENERATED'
-  | 'CUSTOMER_NOTIFIED'
-  | 'CANCEL_REQUESTED'
-  | 'CANCELLED'
-  | 'REFUND_PENDING'
-  | 'REFUNDED'
-  | 'FAILED';
+  | 'Draft'
+  | 'Requested'
+  | 'Confirmed'
+  | 'Paid'
+  | 'Ticketed/booked'
+  | 'Cancelled'
+  | 'Refunded'
+  | 'Failed';
 
 interface TransitionTarget {
   to: BookingState;
   trigger: string;
 }
 
-
 export const TRANSITION_TABLE: Record<BookingState, TransitionTarget[]> = {
-  DRAFT_PACKAGE: [
-    { to: 'QUOTE_GENERATED', trigger: 'quote_created' },
+  'Draft': [
+    { to: 'Requested', trigger: 'booking_requested' },
+    { to: 'Confirmed', trigger: 'manual_confirm' },
   ],
-  QUOTE_GENERATED: [
-    { to: 'QUOTE_EXPIRED', trigger: 'expiry_check' },
-    { to: 'PAYMENT_PENDING', trigger: 'checkout_initiated' },
+  'Requested': [
+    { to: 'Confirmed', trigger: 'booking_confirmed' },
+    { to: 'Cancelled', trigger: 'cancel' },
+    { to: 'Failed', trigger: 'fail' },
   ],
-  QUOTE_EXPIRED: [],
-  PAYMENT_PENDING: [
-    { to: 'PAYMENT_PAID', trigger: 'webhook_success' },
-    { to: 'PAYMENT_FAILED', trigger: 'webhook_failure' },
+  'Confirmed': [
+    { to: 'Paid', trigger: 'payment_success' },
+    { to: 'Ticketed/booked', trigger: 'ticket_issued' },
+    { to: 'Cancelled', trigger: 'cancel' },
   ],
-  PAYMENT_FAILED: [],
-  PAYMENT_PAID: [
-    { to: 'BOOKING_CONFIRMED', trigger: 'payment_confirmed' },
+  'Paid': [
+    { to: 'Ticketed/booked', trigger: 'ticket_issued' },
+    { to: 'Refunded', trigger: 'refund' },
+    { to: 'Cancelled', trigger: 'cancel' },
   ],
-  /** @deprecated Legacy rows only — settled via migration / legacy_settle */
-  BOOKING_PENDING_MANUAL_CONFIRMATION: [
-    { to: 'BOOKING_CONFIRMED', trigger: 'legacy_settle' },
+  'Ticketed/booked': [
+    { to: 'Cancelled', trigger: 'cancel' },
+    { to: 'Refunded', trigger: 'refund' },
   ],
-  SUPPLIER_CONFIRMATION_PENDING: [
-    { to: 'BOOKING_CONFIRMED', trigger: 'supplier_confirm' },
+  'Cancelled': [
+    { to: 'Refunded', trigger: 'refund' },
   ],
-  BOOKING_CONFIRMED: [
-    { to: 'DOCUMENTS_GENERATING', trigger: 'system_auto' },
-  ],
-  DOCUMENTS_GENERATING: [
-    { to: 'DOCUMENTS_GENERATED', trigger: 'worker_complete' },
-    { to: 'FAILED', trigger: 'max_retries_exceeded' },
-  ],
-  DOCUMENTS_GENERATED: [
-    { to: 'CUSTOMER_NOTIFIED', trigger: 'notification_sent' },
-  ],
-  CUSTOMER_NOTIFIED: [],
-  CANCEL_REQUESTED: [
-    { to: 'CANCELLED', trigger: 'cancellation_processed' },
-    { to: 'REFUND_PENDING', trigger: 'refund_initiated' },
-  ],
-  CANCELLED: [],
-  REFUND_PENDING: [
-    { to: 'REFUNDED', trigger: 'refund_completed' },
-  ],
-  REFUNDED: [],
-  FAILED: [],
+  'Refunded': [],
+  'Failed': [],
 };
 
 

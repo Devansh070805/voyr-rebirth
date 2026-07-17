@@ -26,4 +26,13 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+router.post('/manual', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const booking = await bookingService.createManualBooking(req.body);
+    res.status(201).json(booking);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export { router as bookingRoutes };
