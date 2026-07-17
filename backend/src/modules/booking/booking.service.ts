@@ -1,8 +1,8 @@
 /**
  * Booking Service — State machine and post-payment confirmation.
  *
- * After payment succeeds, bookings move to BOOKING_CONFIRMED automatically
- * and document generation is enqueued (no manual admin approval step).
+ * After payment succeeds, bookings move to Confirmed/Paid automatically
+ * and document generation is enqueued. Includes fallback for manual bookings.
  */
 
 import { query, queryOne, queryRows, transaction } from '../../db/index.js';
@@ -27,10 +27,9 @@ const BS = Object.fromEntries(
 ) as Record<BookingState, BookingState>;
 
 const POST_CONFIRM_STATES: BookingState[] = [
-  BS.BOOKING_CONFIRMED,
-  BS.DOCUMENTS_GENERATING,
-  BS.DOCUMENTS_GENERATED,
-  BS.CUSTOMER_NOTIFIED,
+  BS.Confirmed,
+  BS.Paid,
+  BS['Ticketed/booked'],
 ];
 
 function toBS(s: string | undefined | null, field = 'status'): BookingState {
@@ -47,8 +46,16 @@ function isPostConfirmState(status: BookingState): boolean {
 
 export interface Booking {
   id: string;
-  quote_id: string;
+  quote_id: string | null;
   status: BookingState;
+  account_type?: string;
+  parent_account_ref?: string;
+  traveler_ref?: string;
+  booking_type?: string;
+  source_provider?: string;
+  destination?: string;
+  travel_start_date?: Date | string;
+  travel_end_date?: Date | string;
   created_at: string;
 }
 
@@ -56,6 +63,7 @@ export interface BookingService {
   createBooking(quoteId: string, idempotencyKey: string): Promise<Booking>;
   createPaymentTrackingBooking(quoteId: string): Promise<{ id: string }>;
   getBooking(bookingId: string): Promise<Booking>;
+  createManualBooking(data: Partial<Booking>): Promise<Booking>;
 }
 
 export interface EnqueueDocumentGenerationCallback {
@@ -78,12 +86,26 @@ async function startDocumentGeneration(
   bookingId: string,
   enqueueDocumentGeneration?: EnqueueDocumentGenerationCallback,
 ): Promise<void> {
-  await stateMachine.transition(
-    bookingId,
-    BS.BOOKING_CONFIRMED,
-    BS.DOCUMENTS_GENERATING,
-    'system_auto',
+  const currentStatus = await queryOne<{ status: string }>(
+    `SELECT status FROM bookings WHERE id = $1`,
+    [bookingId],
   );
+
+  if (currentStatus?.status === BS.Paid) {
+    await stateMachine.transition(
+      bookingId,
+      BS.Paid,
+      BS['Ticketed/booked'],
+      'ticket_issued',
+    );
+  } else if (currentStatus?.status === BS.Confirmed) {
+    await stateMachine.transition(
+      bookingId,
+      BS.Confirmed,
+      BS['Ticketed/booked'],
+      'ticket_issued',
+    );
+  }
 
   if (enqueueDocumentGeneration) {
     await enqueueDocumentGeneration(bookingId, `doc_gen_${bookingId}`);
@@ -103,25 +125,18 @@ async function confirmBookingAfterPayment(
 ): Promise<Booking> {
   if (isPostConfirmState(currentStatus)) {
     const existing = await queryOne<Booking>(
-      `SELECT id, quote_id, status, created_at FROM bookings WHERE id = $1`,
+      `SELECT * FROM bookings WHERE id = $1`,
       [bookingId],
     );
     return existing!;
   }
 
-  if (currentStatus === BS.BOOKING_PENDING_MANUAL_CONFIRMATION) {
+  if (currentStatus === BS.Draft || currentStatus === BS.Requested) {
     await stateMachine.transition(
       bookingId,
-      BS.BOOKING_PENDING_MANUAL_CONFIRMATION,
-      BS.BOOKING_CONFIRMED,
+      currentStatus,
+      BS.Confirmed,
       'legacy_settle',
-    );
-  } else if (currentStatus === BS.PAYMENT_PAID) {
-    await stateMachine.transition(
-      bookingId,
-      BS.PAYMENT_PAID,
-      BS.BOOKING_CONFIRMED,
-      'payment_confirmed',
     );
   } else {
     throw new ValidationError(
@@ -134,7 +149,7 @@ async function confirmBookingAfterPayment(
 
   await logAudit('system', 'booking.confirmed', 'booking', bookingId, {
     previous_status: currentStatus,
-    new_status: BS.BOOKING_CONFIRMED,
+    new_status: BS.Confirmed,
   });
 
   try {
@@ -149,7 +164,7 @@ async function confirmBookingAfterPayment(
   getMetricsService().recordBookingEvent('CONFIRMED');
 
   const updated = await queryOne<Booking>(
-    `SELECT id, quote_id, status, created_at FROM bookings WHERE id = $1`,
+    `SELECT * FROM bookings WHERE id = $1`,
     [bookingId],
   );
   return updated!;
@@ -195,12 +210,6 @@ export function createBookingService(
 
         if (existingBooking) {
           const status = toBS(existingBooking.status);
-          if (status === BS.PAYMENT_PENDING) {
-            throw new ValidationError(
-              `Booking for quote ${quoteId} is still awaiting payment settlement`,
-            );
-          }
-
           const booking = await confirmBookingAfterPayment(
             existingBooking.id,
             quoteId,
@@ -214,7 +223,7 @@ export function createBookingService(
         const bookingId = await transaction(async (client) => {
           const bookingResult = await client.query<{ id: string }>(
             `INSERT INTO bookings (quote_id, status)
-             VALUES ($1, 'BOOKING_CONFIRMED')
+             VALUES ($1, 'Confirmed')
              RETURNING id`,
             [quoteId],
           );
@@ -238,8 +247,8 @@ export function createBookingService(
             [
               newBookingId,
               JSON.stringify({
-                from: BS.PAYMENT_PAID,
-                to: BS.BOOKING_CONFIRMED,
+                from: BS.Requested,
+                to: BS.Confirmed,
                 trigger: 'payment_confirmed',
               }),
             ],
@@ -260,7 +269,7 @@ export function createBookingService(
         }
 
         const booking = await queryOne<Booking>(
-          `SELECT id, quote_id, status, created_at FROM bookings WHERE id = $1`,
+          `SELECT * FROM bookings WHERE id = $1`,
           [bookingId],
         );
 
@@ -280,7 +289,7 @@ export function createBookingService(
 
     async getBooking(bookingId: string): Promise<Booking> {
       const booking = await queryOne<Booking>(
-        `SELECT id, quote_id, status, created_at FROM bookings WHERE id = $1`,
+        `SELECT * FROM bookings WHERE id = $1`,
         [bookingId],
       );
       if (!booking) {
@@ -293,7 +302,7 @@ export function createBookingService(
       return transaction(async (client) => {
         const result = await client.query<{ id: string }>(
           `INSERT INTO bookings (quote_id, status)
-           VALUES ($1, 'PAYMENT_PENDING')
+           VALUES ($1, 'Requested')
            RETURNING id`,
           [quoteId],
         );
@@ -305,8 +314,8 @@ export function createBookingService(
           [
             bookingId,
             JSON.stringify({
-              from: BS.QUOTE_GENERATED,
-              to: BS.PAYMENT_PENDING,
+              from: BS.Draft,
+              to: BS.Requested,
               trigger: 'checkout_initiated',
             }),
           ],
@@ -315,6 +324,47 @@ export function createBookingService(
         return { id: bookingId };
       });
     },
+
+    async createManualBooking(data: Partial<Booking>): Promise<Booking> {
+      return transaction(async (client) => {
+        const result = await client.query<Booking>(
+          `INSERT INTO bookings (
+            quote_id, status, account_type, parent_account_ref, traveler_ref,
+            booking_type, source_provider, destination, travel_start_date, travel_end_date
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          RETURNING *`,
+          [
+            data.quote_id || null,
+            data.status || 'Draft',
+            data.account_type || null,
+            data.parent_account_ref || null,
+            data.traveler_ref || null,
+            data.booking_type || null,
+            data.source_provider || null,
+            data.destination || null,
+            data.travel_start_date || null,
+            data.travel_end_date || null,
+          ]
+        );
+
+        const newBooking = result.rows[0];
+
+        await client.query(
+          `INSERT INTO booking_events (booking_id, event, created_at)
+           VALUES ($1, $2, NOW())`,
+          [
+            newBooking.id,
+            JSON.stringify({
+              to: data.status || 'Draft',
+              trigger: 'manual_creation',
+            }),
+          ],
+        );
+
+        return newBooking;
+      });
+    }
   };
 }
 
