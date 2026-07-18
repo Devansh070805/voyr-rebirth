@@ -1,9 +1,9 @@
 /**
  * Auth Routes — Express router for authentication endpoints.
  *
- * POST /auth/login   — Send OTP to email
- * POST /auth/verify  — Verify OTP and get tokens
- * POST /auth/refresh — Refresh access token
+ * POST /auth/register — Register with email/password
+ * POST /auth/login    — Login with email/password
+ * POST /auth/refresh  — Refresh access token
  */
 
 import { Router } from 'express';
@@ -18,7 +18,6 @@ const partnerService = createPartnerService();
 
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const OTP_REGEX = /^\d{6}$/;
 
 function validateEmail(email: unknown): string {
   if (typeof email !== 'string' || !EMAIL_REGEX.test(email.trim())) {
@@ -31,11 +30,11 @@ function validateEmail(email: unknown): string {
   return cleaned;
 }
 
-function validateOtp(otp: unknown): string {
-  if (typeof otp !== 'string' || !OTP_REGEX.test(otp.trim())) {
-    throw new ValidationError('OTP must be a 6-digit number');
+function validatePassword(password: unknown): string {
+  if (typeof password !== 'string' || password.length < 6) {
+    throw new ValidationError('Password must be at least 6 characters long');
   }
-  return otp.trim();
+  return password;
 }
 
 function validateRefreshToken(token: unknown): string {
@@ -47,14 +46,16 @@ function validateRefreshToken(token: unknown): string {
 
 
 /**
- * POST /auth/login
- * Body: { email: string }
- * Response: { success: boolean, message: string }
+ * POST /auth/register
+ * Body: { email: string, password: string, accountType?: string }
+ * Response: { access_token: string, refresh_token: string }
  */
-router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const email = validateEmail(req.body.email);
-    const result = await authService.sendOtp(email);
+    const password = validatePassword(req.body.password);
+    const accountType = req.body.accountType;
+    const result = await authService.register(email, password, accountType);
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -62,15 +63,15 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
 });
 
 /**
- * POST /auth/verify
- * Body: { email: string, otp: string }
+ * POST /auth/login
+ * Body: { email: string, password: string }
  * Response: { access_token: string, refresh_token: string }
  */
-router.post('/verify', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const email = validateEmail(req.body.email);
-    const otp = validateOtp(req.body.otp);
-    const result = await authService.verifyOtp(email, otp);
+    const password = validatePassword(req.body.password);
+    const result = await authService.login(email, password);
     res.status(200).json(result);
   } catch (err) {
     next(err);

@@ -267,8 +267,8 @@ describe('Integration — Full Booking Lifecycle', () => {
       webhookClient.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
       mockTransaction.mockImplementationOnce(async (fn: (c: unknown) => Promise<unknown>) => fn(webhookClient));
 
-      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'PAYMENT_PENDING' });
-      mockStateMachineTransition.mockResolvedValueOnce('PAYMENT_PAID');
+      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'Requested' });
+      mockStateMachineTransition.mockResolvedValueOnce('Paid');
       mockCreateBooking.mockResolvedValueOnce({
         id: BOOKING_ID, quote_id: QUOTE_ID,
         status: 'BOOKING_CONFIRMED', created_at: new Date().toISOString(),
@@ -284,9 +284,9 @@ describe('Integration — Full Booking Lifecycle', () => {
       const sig = computeSignature(webhookPayload, WEBHOOK_SECRET);
       await paymentService.processWebhook(sig, webhookPayload, 'idem-wh-1');
 
-      // Verify state machine: PAYMENT_PENDING → PAYMENT_PAID
+      // Verify state machine: Requested → Paid
       expect(mockStateMachineTransition).toHaveBeenCalledWith(
-        BOOKING_ID, 'PAYMENT_PENDING', 'PAYMENT_PAID', 'webhook_success',
+        BOOKING_ID, 'Requested', 'Paid', 'webhook_success',
       );
       // Verify auto-create booking was called
       expect(mockCreateBooking).toHaveBeenCalledWith(
@@ -300,7 +300,7 @@ describe('Integration — Full Booking Lifecycle', () => {
 
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
       mockQueryOne.mockResolvedValueOnce({
-        id: BOOKING_ID, status: 'DOCUMENTS_GENERATED', quote_id: QUOTE_ID,
+        id: BOOKING_ID, status: 'Ticketed/booked', quote_id: QUOTE_ID,
       });
       mockQueryOne.mockResolvedValueOnce({ id: USER_ID, email: 'traveler@example.com' });
       mockQueryRows.mockResolvedValueOnce([
@@ -308,7 +308,7 @@ describe('Integration — Full Booking Lifecycle', () => {
         { id: 'doc-2', type: 'itinerary', file_url: 'https://r2.example.com/itinerary.pdf', status: 'GENERATED' },
         { id: 'doc-3', type: 'voucher', file_url: 'https://r2.example.com/voucher.pdf', status: 'GENERATED' },
       ]);
-      mockStateMachineTransition.mockResolvedValueOnce('CUSTOMER_NOTIFIED');
+
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
 
@@ -318,9 +318,6 @@ describe('Integration — Full Booking Lifecycle', () => {
       const emailCall = mockEmailClient.send.mock.calls[0][0];
       expect(emailCall.to).toBe('traveler@example.com');
       expect(emailCall.subject).toContain('Documents Are Ready');
-      expect(mockStateMachineTransition).toHaveBeenCalledWith(
-        BOOKING_ID, 'DOCUMENTS_GENERATED', 'CUSTOMER_NOTIFIED', 'notification_sent',
-      );
     });
 
     it('should enqueue document generation after booking confirmation', async () => {
@@ -329,7 +326,7 @@ describe('Integration — Full Booking Lifecycle', () => {
       const documentService = createDocumentService(mockR2, mockQueue);
 
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'DOCUMENTS_GENERATING' });
+      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'Ticketed/booked' });
       mockQueryOne.mockResolvedValueOnce({ id: DOC_JOB_ID });
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
@@ -413,8 +410,8 @@ describe('Integration — Full Booking Lifecycle', () => {
       failClient.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
       mockTransaction.mockImplementationOnce(async (fn: (c: unknown) => Promise<unknown>) => fn(failClient));
 
-      mockQueryOne.mockResolvedValueOnce({ id: 'fail-book', status: 'PAYMENT_PENDING' });
-      mockStateMachineTransition.mockResolvedValueOnce('PAYMENT_FAILED');
+      mockQueryOne.mockResolvedValueOnce({ id: 'fail-book', status: 'Requested' });
+      mockStateMachineTransition.mockResolvedValueOnce('Failed');
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
 
@@ -429,9 +426,9 @@ describe('Integration — Full Booking Lifecycle', () => {
       // Verify payment updated to FAILED
       expect(failClient.query.mock.calls[0][1]).toContain('FAILED');
 
-      // Verify state machine: PAYMENT_PENDING → PAYMENT_FAILED
+      // Verify state machine: Requested → Failed
       expect(mockStateMachineTransition).toHaveBeenCalledWith(
-        'fail-book', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'webhook_failure',
+        'fail-book', 'Requested', 'Failed', 'webhook_failure',
       );
 
       // Verify idempotency completed with FAILED status
@@ -520,7 +517,7 @@ describe('Integration — Full Booking Lifecycle', () => {
 
       // First call: new operation
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'DOCUMENTS_GENERATING' });
+      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'Ticketed/booked' });
       mockQueryOne.mockResolvedValueOnce({ id: DOC_JOB_ID });
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
@@ -542,12 +539,12 @@ describe('Integration — Full Booking Lifecycle', () => {
 
       // First call
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'DOCUMENTS_GENERATED', quote_id: QUOTE_ID });
+      mockQueryOne.mockResolvedValueOnce({ id: BOOKING_ID, status: 'Ticketed/booked', quote_id: QUOTE_ID });
       mockQueryOne.mockResolvedValueOnce({ id: USER_ID, email: 'traveler@example.com' });
       mockQueryRows.mockResolvedValueOnce([
         { id: 'doc-1', type: 'invoice', file_url: 'https://r2.example.com/invoice.pdf', status: 'GENERATED' },
       ]);
-      mockStateMachineTransition.mockResolvedValueOnce('CUSTOMER_NOTIFIED');
+
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
 

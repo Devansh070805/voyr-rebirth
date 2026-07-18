@@ -88,7 +88,7 @@ export default function ToolCallRenderer({
                   location: hotel.location,
                   hotel_id: hotel.hotel_id,
                   vendor: hotel.vendor,
-                  listing_id: hotel.listing_id,
+                  listing_id: hotel.listing_id || hotel.hotel_key,
                   source: hotel.source,
                   featured: hotel.featured,
                 })

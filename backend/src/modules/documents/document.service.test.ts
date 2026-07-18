@@ -128,7 +128,7 @@ function mockBooking(overrides: Record<string, unknown> = {}) {
   return {
     id: TEST_BOOKING_ID,
     quote_id: TEST_QUOTE_ID,
-    status: 'DOCUMENTS_GENERATING',
+    status: 'Ticketed/booked',
     ...overrides,
   };
 }
@@ -169,7 +169,7 @@ describe('Document Service — Unit Tests', () => {
 
 
   describe('enqueueGeneration — enqueue with idempotency', () => {
-    it('should enqueue document generation for a valid booking in DOCUMENTS_GENERATING state', async () => {
+    it('should enqueue document generation for a valid booking in Ticketed/booked state', async () => {
       // Idempotency: new operation
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
 
@@ -251,7 +251,7 @@ describe('Document Service — Unit Tests', () => {
       expect(mockQueue.publish).not.toHaveBeenCalled();
     });
 
-    it('should reject enqueue when booking is not in DOCUMENTS_GENERATING state', async () => {
+    it('should reject enqueue when booking is not in Ticketed/booked state', async () => {
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
 
       // Booking in wrong state
@@ -260,7 +260,7 @@ describe('Document Service — Unit Tests', () => {
       mockIdempotencyFail.mockResolvedValueOnce(undefined);
 
       await expect(service.enqueueGeneration(TEST_BOOKING_ID, TEST_IDEMPOTENCY_KEY))
-        .rejects.toThrow(/expected DOCUMENTS_GENERATING/i);
+        .rejects.toThrow(/expected Ticketed\/booked/i);
 
       expect(mockIdempotencyFail).toHaveBeenCalledWith(TEST_IDEMPOTENCY_KEY);
       expect(mockQueue.publish).not.toHaveBeenCalled();
@@ -543,21 +543,14 @@ describe('Document Service — Unit Tests', () => {
       // Update job status to COMPLETED
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
-      // State machine transition: DOCUMENTS_GENERATING → DOCUMENTS_GENERATED
-      mockStateMachineTransition.mockResolvedValueOnce('DOCUMENTS_GENERATED');
+      // State machine transition: (Removed in the new 8-state model)
 
       // Audit log
       mockLogAudit.mockResolvedValueOnce(undefined);
 
       await service.processQueueMessage(message);
 
-      // Verify state machine was called
-      expect(mockStateMachineTransition).toHaveBeenCalledWith(
-        TEST_BOOKING_ID,
-        'DOCUMENTS_GENERATING',
-        'DOCUMENTS_GENERATED',
-        'worker_complete',
-      );
+
 
       // Verify audit log was recorded
       expect(mockLogAudit).toHaveBeenCalledWith(
@@ -644,8 +637,7 @@ describe('Document Service — Unit Tests', () => {
       // Update job status to FAILED
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
-      // State machine transition: DOCUMENTS_GENERATING → FAILED
-      mockStateMachineTransition.mockResolvedValueOnce('FAILED');
+      // State machine transition: (Removed in the new 8-state model)
 
       // Audit log
       mockLogAudit.mockResolvedValueOnce(undefined);
@@ -664,13 +656,7 @@ describe('Document Service — Unit Tests', () => {
         expect.stringContaining('failed'),
       );
 
-      // Verify state machine transitioned to FAILED
-      expect(mockStateMachineTransition).toHaveBeenCalledWith(
-        TEST_BOOKING_ID,
-        'DOCUMENTS_GENERATING',
-        'FAILED',
-        'max_retries_exceeded',
-      );
+
 
       // Verify audit log recorded the failure
       expect(mockLogAudit).toHaveBeenCalledWith(

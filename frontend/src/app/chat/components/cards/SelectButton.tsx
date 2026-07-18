@@ -19,17 +19,19 @@ export default function SelectButton({
   onClick,
   className = "",
 }: SelectButtonProps) {
-  if (!onClick) return null;
-
+  // Always render the button — if onClick is missing show a disabled state
+  // (previously returning null caused the button to disappear entirely)
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={loading || selected}
+      onClick={onClick ?? undefined}
+      disabled={loading || selected || !onClick}
       className={`mt-3 w-full rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 ${
         selected
           ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border border-violet-200 bg-white text-violet-700 hover:bg-violet-50"
+          : !onClick
+            ? "border border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+            : "border border-violet-200 bg-white text-violet-700 hover:bg-violet-50 active:scale-95"
       } disabled:cursor-not-allowed ${className}`}
     >
       {loading ? (

@@ -3,9 +3,10 @@ import type { Request, Response, NextFunction } from 'express';
 import { createConversationService } from '../conversation/conversation.service.js';
 import { createContextBuilderService } from '../conversation/context-builder.service.js';
 import { requireString } from '../../infra/validation.js';
-import { ValidationError } from '../../infra/error-handler.js';
+
 import { buildDisplayToolsFromPlan } from '../ai-gateway/display-tools-builder.js';
 import { createDefaultTripPlanModule } from './trip-plan.factory.js';
+import { mergeIntentIntoPlan } from './trip-plan.service.js';
 import { parsePlanSelection } from './plan-selection.js';
 
 const router = Router({ mergeParams: true });
@@ -41,7 +42,17 @@ router.post('/select', async (req: Request, res: Response, next: NextFunction) =
 
     let plan = await conversationService.getPlanData(conversationId);
     if (!plan.destination) {
-      throw new ValidationError('No active trip plan for this conversation yet');
+      let inferredDest = 'Unknown Destination';
+      const item = selection.item as any;
+      if (item.location) inferredDest = typeof item.location === 'string' ? item.location.split(',')[0] : 'Unknown';
+      else if (item.arrivalIata) inferredDest = item.arrivalIata;
+
+      plan = mergeIntentIntoPlan(plan, {
+        destination: inferredDest,
+        nights: 3,
+        days: 4,
+        travelers: 1
+      });
     }
 
     plan = tripPlanService.applySelection(plan, selection);

@@ -1,4 +1,4 @@
-﻿import './instrument.js';
+import './instrument.js';
 import * as Sentry from '@sentry/node';
 import express from 'express';
 import { connectRedis } from './infra/redis.js';
@@ -38,6 +38,8 @@ import { tinyfishRoutes } from './modules/tinyfish/index.js';
 import { curatedListingsAdminRoutes } from './modules/curated-listings/index.js';
 import { pricingAdminRoutes } from './modules/pricing/index.js';
 import { partnerRoutes, partnerAdminRoutes } from './modules/partner/index.js';
+import { xoteloRoutes } from './modules/xotelo/index.js';
+import { accountsRoutes } from './modules/accounts/accounts.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -100,6 +102,8 @@ app.use('/admin', curatedListingsAdminRoutes);
 app.use('/admin', pricingAdminRoutes);
 app.use('/admin', partnerAdminRoutes);
 app.use('/partner', partnerRoutes);
+app.use('/hotels', xoteloRoutes);
+app.use('/accounts', accountsRoutes);
 
 // Data source API routes
 app.use('/places', cacheMiddleware(86400), geoapifyRoutes);

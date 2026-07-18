@@ -15,10 +15,21 @@ function asString(value: unknown, field: string): string {
 }
 
 function asNumber(value: unknown, field: string): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    throw new ValidationError(`${field} must be a number`);
+  if (typeof value === 'number' && !Number.isNaN(value)) return value;
+  if (typeof value === 'string') {
+    const n = parseFloat(value.replace(/[^\d.]/g, ''));
+    if (!Number.isNaN(n)) return n;
   }
-  return value;
+  throw new ValidationError(`${field} must be a number`);
+}
+
+function coerceNumber(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && !Number.isNaN(value)) return value;
+  if (typeof value === 'string') {
+    const n = parseFloat(value.replace(/[^\d.]/g, ''));
+    if (!Number.isNaN(n)) return n;
+  }
+  return fallback;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -32,10 +43,10 @@ function optionalNumber(value: unknown): number | undefined {
 function parseHotelItem(raw: Record<string, unknown>): SelectedHotel {
   return {
     name: asString(raw.name, 'item.name'),
-    price_per_night: asNumber(raw.price_per_night, 'item.price_per_night'),
+    price_per_night: coerceNumber(raw.price_per_night, 0),
     currency: optionalString(raw.currency) ?? 'USD',
-    category: asString(raw.category, 'item.category'),
-    rating: asNumber(raw.rating, 'item.rating'),
+    category: optionalString(raw.category) ?? 'Standard',
+    rating: coerceNumber(raw.rating, 4),
     location: optionalString(raw.location),
     hotel_id: optionalNumber(raw.hotel_id),
     vendor: optionalString(raw.vendor),
@@ -51,9 +62,9 @@ function parseHotelItem(raw: Record<string, unknown>): SelectedHotel {
 function parseActivityItem(raw: Record<string, unknown>): SelectedActivity {
   return {
     name: asString(raw.name, 'item.name'),
-    description: asString(raw.description, 'item.description'),
-    duration: asString(raw.duration, 'item.duration'),
-    category: asString(raw.category, 'item.category'),
+    description: optionalString(raw.description) ?? asString(raw.name, 'item.name'),
+    duration: optionalString(raw.duration) ?? '3 hours',
+    category: optionalString(raw.category) ?? 'Experience',
     place_id: optionalString(raw.place_id),
     address: optionalString(raw.address),
     source: raw.source === 'curated' ? 'curated' : 'api',

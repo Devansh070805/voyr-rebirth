@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Notification Service — Email delivery for booking documents.
  * Triggered when a booking reaches DOCUMENTS_GENERATED.
  */
@@ -6,7 +6,6 @@
 import { queryOne, queryRows } from '../../db/index.js';
 import {
   createIdempotencyService,
-  createStateMachineEngine,
   createLogger,
   NotFoundError,
   ValidationError,
@@ -19,7 +18,7 @@ import { logAudit } from '../../infra/audit.service.js';
 
 const logger = createLogger('notification-service');
 const idempotencyService = createIdempotencyService();
-const stateMachine = createStateMachineEngine();
+
 
 
 export interface NotificationService {
@@ -132,9 +131,9 @@ export function createNotificationService(emailClient?: EmailClient): Notificati
           throw new NotFoundError(`Booking ${bookingId} not found`);
         }
 
-        if (booking.status !== 'DOCUMENTS_GENERATED') {
+        if (booking.status !== 'Ticketed/booked') {
           throw new ValidationError(
-            `Booking ${bookingId} is in state ${booking.status}, expected DOCUMENTS_GENERATED`,
+            `Booking ${bookingId} is in state ${booking.status}, expected Ticketed/booked`,
           );
         }
 
@@ -232,13 +231,7 @@ export function createNotificationService(emailClient?: EmailClient): Notificati
           attempts: emailResult.attempts,
         });
 
-        // 7. Transition booking: DOCUMENTS_GENERATED → CUSTOMER_NOTIFIED
-        await stateMachine.transition(
-          bookingId,
-          'DOCUMENTS_GENERATED',
-          'CUSTOMER_NOTIFIED',
-          'notification_sent',
-        );
+        // 7. Transition booking (Removed in new 8-state model)
 
         // 8. Complete idempotency
         await idempotencyService.complete(idempotencyKey, {

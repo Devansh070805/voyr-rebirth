@@ -63,6 +63,6 @@ export function followUpIntroText(
   }
 }
 
-export function planDataGapMessage(plan: TripPlan): string | null {
+export function planDataGapMessage(_plan: TripPlan): string | null {
   return null;
 }

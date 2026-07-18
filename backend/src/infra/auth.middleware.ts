@@ -24,7 +24,7 @@ const PUBLIC_PATHS = [
   '/health',
   '/metrics',
   '/auth/login',
-  '/auth/verify',
+  '/auth/register',
   '/auth/refresh',
   '/auth/google',
   '/auth/logout',
@@ -35,6 +35,7 @@ const PUBLIC_PATHS = [
  */
 const PUBLIC_PREFIXES = [
   '/webhook/',
+  '/hotels/',
 ];
 
 function isPublicPath(path: string): boolean {

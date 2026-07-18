@@ -288,16 +288,16 @@ export function createPaymentService(
               await client.query(
                 `INSERT INTO booking_events (booking_id, event, created_at)
                  VALUES ($1, $2, NOW())`,
-                [bookingId, JSON.stringify({ from: 'QUOTE_GENERATED' satisfies BookingState, to: 'PAYMENT_PENDING' satisfies BookingState, trigger: 'checkout_initiated' })],
+                  [bookingId, JSON.stringify({ from: 'Draft' satisfies BookingState, to: 'Requested' satisfies BookingState, trigger: 'checkout_initiated' })],
               );
             });
           }
-        } else if (booking.status === 'QUOTE_GENERATED' || booking.status === 'DRAFT_PACKAGE') {
+        } else if (booking.status === 'Draft' || booking.status === 'Requested') {
           // Transition existing booking
           await stateMachine.transition(
             booking.id,
             booking.status as BookingState,
-            'PAYMENT_PENDING' as BookingState,
+            'Requested' as BookingState,
             'checkout_initiated',
           );
         }
@@ -400,12 +400,12 @@ export function createPaymentService(
           [payment.quote_id],
         );
 
-        if (booking && booking.status === 'PAYMENT_PENDING') {
+        if (booking && booking.status === 'Requested') {
           if (newStatus === 'PAID') {
             await stateMachine.transition(
               booking.id,
-              'PAYMENT_PENDING' as BookingState,
-              'PAYMENT_PAID' as BookingState,
+              'Requested' as BookingState,
+              'Paid' as BookingState,
               'webhook_success',
             );
 
@@ -430,8 +430,8 @@ export function createPaymentService(
           } else {
             await stateMachine.transition(
               booking.id,
-              'PAYMENT_PENDING' as BookingState,
-              'PAYMENT_FAILED' as BookingState,
+              'Requested' as BookingState,
+              'Failed' as BookingState,
               'webhook_failure',
             );
           }

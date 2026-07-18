@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cloudflare Worker API Gateway
  *
  * Implements the GatewayMiddleware interface from the design document:
@@ -19,6 +19,8 @@ export interface Env {
 export interface JwtPayload {
   sub: string;
   email: string;
+  account_type?: string;
+  account_id?: string;
   iat: number;
   exp: number;
   type?: string;
@@ -93,12 +95,13 @@ export function handlePreflight(request: Request, env: Env): Response | null {
 
 const PUBLIC_ENDPOINTS = [
   '/auth/login',
-  '/auth/verify',
+  '/auth/register',
   '/auth/refresh',
   '/auth/google',
   '/auth/logout',
   '/landing',
   '/webhook/payment',
+  '/hotels',
 ];
 
 /**
@@ -248,6 +251,8 @@ export async function routeRequest(request: Request, env: Env): Promise<Response
     // Attach user info from JWT to forwarded request
     headers.set('x-user-id', payload.sub);
     headers.set('x-user-email', payload.email);
+    if (payload.account_type) headers.set('x-account-type', payload.account_type);
+    if (payload.account_id) headers.set('x-account-id', payload.account_id);
   }
 
 

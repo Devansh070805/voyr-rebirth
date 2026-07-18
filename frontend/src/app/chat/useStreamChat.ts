@@ -177,7 +177,8 @@ export function useStreamChat(): UseStreamChatReturn {
                 : msg,
             ),
           );
-          conv.persistMessage(conv.activeConversationId || "", "assistant", fullText, toolCalls);
+          // Note: backend already persists both user & assistant messages in ai-gateway.routes.ts
+          // No need to call persistMessage here — doing so doubles every message in the DB.
 
           conv.updateConversationHistory((prev) => [
             ...prev,
@@ -223,7 +224,8 @@ export function useStreamChat(): UseStreamChatReturn {
         { role: "user", content: fullContent },
       ]);
 
-      conv.persistMessage(convId, "user", fullContent);
+      // Note: backend persists the user message in ai-gateway.routes.ts (appendMessage)
+      // so we do NOT call conv.persistMessage here.
 
       const assistantId = `ai-${Date.now()}`;
       const assistantMsg: ChatMessage = {
@@ -338,7 +340,9 @@ export function useStreamChat(): UseStreamChatReturn {
 
   const selectPlanItem = useCallback(
     async (type: PlanSelectionType, item: PlanSelectionItem) => {
+      console.log("[selectPlanItem] called", { type, isAuthenticated, convId: conv.activeConversationId });
       if (!isAuthenticated) {
+        setPlanToast({ message: "Please log in to save items to your itinerary.", type: "error" });
         setAuthRequired(true);
         return;
       }
@@ -347,9 +351,10 @@ export function useStreamChat(): UseStreamChatReturn {
         route_id: "route_id" in item ? item.route_id : undefined,
         name: "name" in item ? item.name : undefined,
       });
+      console.log("[selectPlanItem] itemId:", itemId);
       setSelectingPlanId(itemId);
 
-      if ("source" in item && item.source === "mock") {
+      if ("source" in item && (item as any).source === "mock") {
         setTimeout(() => {
           setSelectedPlanIds((prev) => {
             if (type === "hotel") return { ...prev, hotel: itemId };
@@ -389,6 +394,11 @@ export function useStreamChat(): UseStreamChatReturn {
       }
 
       const convId = conv.activeConversationId || (await conv.ensureConversation());
+      if (!convId) {
+        setPlanToast({ message: "Please start a conversation first before selecting items.", type: "error" });
+        setSelectingPlanId(null);
+        return;
+      }
       try {
         const response = await apiFetch(`/conversations/${convId}/plan/select`, {
           method: "POST",
@@ -396,8 +406,16 @@ export function useStreamChat(): UseStreamChatReturn {
           body: JSON.stringify({ type, item }),
         });
         if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          throw new Error(err.message || err.error?.message || "Failed to update plan");
+          let errMsg = `Request failed (${response.status})`;
+          try {
+            const errBody = await response.json();
+            errMsg =
+              errBody?.error?.message ||
+              errBody?.message ||
+              (typeof errBody?.error === "string" ? errBody.error : null) ||
+              errMsg;
+          } catch { /* ignore JSON parse error */ }
+          throw new Error(errMsg);
         }
         const data = (await response.json()) as {
           message: string;
@@ -454,10 +472,9 @@ export function useStreamChat(): UseStreamChatReturn {
           "I am ready to book",
         ]);
         setPlanToast({ message: data.message, type: "success" });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to update plan";
-        setPlanToast({ message, type: "error" });
-        console.error("Plan selection failed:", err);
+      } catch (err: any) {
+        console.error("Plan select error:", err);
+        setPlanToast({ message: err.message || "Failed to add to itinerary.", type: "error" });
       } finally {
         setSelectingPlanId(null);
       }
@@ -582,5 +599,6 @@ export function useStreamChat(): UseStreamChatReturn {
     clearPlanToast: () => setPlanToast(null),
     authRequired,
     clearAuthRequired: () => setAuthRequired(false),
+    injectShowcaseCards,
   };
 }

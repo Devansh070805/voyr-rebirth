@@ -103,7 +103,12 @@ export function ChatPageContent({ variant = "consumer" }: { variant?: "consumer"
     }
   }, [activeConversationId, apiFetch]);
 
-  const hasPlanContent = !!tripState.destination;
+  const hasPlanContent =
+    !!tripState.destination ||
+    !!planSelections.hotel ||
+    planSelections.activities.length > 0 ||
+    !!planSelections.flight ||
+    !!planSelections.ticket;
 
   return (
     <AppShell
@@ -113,34 +118,44 @@ export function ChatPageContent({ variant = "consumer" }: { variant?: "consumer"
       onConversationClick={loadConversation}
       onNewChat={resetChat}
     >
-      <div className="relative flex h-full">
-        <ChatArea
-          messages={messages}
-          isStreaming={isStreaming}
-          error={error}
-          suggestions={suggestions}
-          onSendMessage={sendMessage}
-          onStopStreaming={stopStreaming}
-          onShare={handleShare}
-          onBook={startBooking}
-          onRegenerate={regenerateMessage}
-          onPlanSelect={selectPlanItem}
-          selectedPlanIds={selectedPlanIds}
-          selectingPlanId={selectingPlanId}
-          planToast={planToast}
-          onDismissPlanToast={clearPlanToast}
-          tripState={tripState}
-          conversationId={activeConversationId}
-          isAuthenticated={isAuthenticated}
-          onRefreshConversations={refreshConversations}
-          injectShowcaseCards={injectShowcaseCards}
-        />
-        <RightPanel
-          tripState={tripState}
-          bookingState={bookingState}
-          planSelections={planSelections}
-        />
+      <div className="relative flex h-full justify-center bg-slate-50 lg:p-4">
+        <div className="flex w-full h-full bg-white lg:max-w-[1400px] lg:rounded-2xl lg:shadow-xl lg:shadow-slate-200/50 lg:ring-1 lg:ring-slate-200 overflow-hidden">
+          {/* Main chat area — takes all space, RightPanel sits beside it on lg+ */}
+          <div className="flex flex-1 min-w-0">
+            <ChatArea
+              messages={messages}
+              isStreaming={isStreaming}
+              error={error}
+              suggestions={suggestions}
+              onSendMessage={sendMessage}
+              onStopStreaming={stopStreaming}
+              onShare={handleShare}
+              onBook={startBooking}
+              onRegenerate={regenerateMessage}
+              onPlanSelect={selectPlanItem}
+              selectedPlanIds={selectedPlanIds}
+              selectingPlanId={selectingPlanId}
+              planToast={planToast}
+              onDismissPlanToast={clearPlanToast}
+              tripState={tripState}
+              conversationId={activeConversationId}
+              isAuthenticated={isAuthenticated}
+              onRefreshConversations={refreshConversations}
+              injectShowcaseCards={injectShowcaseCards}
+            />
+          </div>
 
+          {/* Persistent right panel — visible on desktop when there's trip content */}
+          {hasPlanContent && (
+            <RightPanel
+              tripState={tripState}
+              bookingState={bookingState}
+              planSelections={planSelections}
+            />
+          )}
+        </div>
+
+        {/* Floating Plan button — mobile only (lg:hidden) */}
         {hasPlanContent && (
           <button
             type="button"
@@ -152,6 +167,7 @@ export function ChatPageContent({ variant = "consumer" }: { variant?: "consumer"
           </button>
         )}
 
+        {/* Mobile bottom sheet (also opened on mobile via button) */}
         <MobilePlanSheet
           open={mobilePlanOpen}
           onClose={() => setMobilePlanOpen(false)}

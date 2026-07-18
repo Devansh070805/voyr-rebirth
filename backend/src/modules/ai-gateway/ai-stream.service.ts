@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI Stream Service — Streaming chat with tool calling over SSE.
  */
 
@@ -10,6 +10,8 @@ import { TOOL_DEFINITIONS } from './tool-definitions.js';
 import { UNIFIED_SYSTEM_PROMPT } from './system-prompt.js';
 import { getAIConfig } from './ai-provider-config.js';
 import type { AIProviderConfig } from './ai-provider-config.js';
+import { streamGemini } from './gemini-stream.js';
+
 
 const logger = createLogger('ai-stream-service');
 
@@ -36,7 +38,8 @@ function toAnthropicTools() {
 }
 
 
-export type StreamCallback = (event: StreamEvent) => void;
+export type StreamCallback = (event: StreamEvent) => void | Promise<void>;
+
 
 /**
  * Stream a unified AI response with tool calling.
@@ -48,11 +51,12 @@ export async function streamChat(
   onEvent: StreamCallback,
 ): Promise<void> {
   const config = getAIConfig();
+  logger.info('streamChat called', { provider: config.provider, model: config.model, hasKey: !!config.apiKey });
 
   if (!config.apiKey) {
-    onEvent({ type: 'error', data: { message: 'AI provider is not configured. Set AI_PROVIDER and the matching API key (e.g. DEEPSEEK_API_KEY).' } });
-    console.log("Sending done event"); onEvent({ type: 'done', data: {} });
-    console.log("Returning from streamOpenAI"); return;
+    onEvent({ type: 'error', data: { message: 'AI provider is not configured. Set AI_PROVIDER and the matching API key.' } });
+    onEvent({ type: 'done', data: {} });
+    return;
   }
 
   const messages = [
@@ -63,13 +67,18 @@ export async function streamChat(
   try {
     if (config.provider === 'anthropic') {
       await streamAnthropic(config, messages, onEvent);
+    } else if ((process.env.AI_PROVIDER || '').toLowerCase() === 'gemini') {
+      // Use native Gemini streaming for reliable tool calling
+      logger.info('Routing to native Gemini stream');
+      await streamGemini(config.apiKey, config.model, messages, onEvent);
     } else {
       await streamOpenAI(config, messages, onEvent);
     }
+    logger.info('streamChat completed');
   } catch (error) {
     logger.error('Stream error', { error: (error as Error).message });
     onEvent({ type: 'error', data: { message: (error as Error).message } });
-    console.log("Sending done event"); onEvent({ type: 'done', data: {} });
+    onEvent({ type: 'done', data: {} });
   }
 }
 

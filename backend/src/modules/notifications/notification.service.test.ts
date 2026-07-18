@@ -114,7 +114,7 @@ function createMockEmailClient(overrides: Partial<EmailClient> = {}): EmailClien
 function mockBooking(overrides: Record<string, unknown> = {}) {
   return {
     id: TEST_BOOKING_ID,
-    status: 'DOCUMENTS_GENERATED',
+    status: 'Ticketed/booked',
     quote_id: 'qqqqqqqq-qqqq-qqqq-qqqq-qqqqqqqqqqqq',
     ...overrides,
   };
@@ -172,7 +172,7 @@ describe('Notification Service — Unit Tests', () => {
 
 
   describe('sendBookingDocuments — email sending with idempotency', () => {
-    it('should send booking documents email for a valid booking in DOCUMENTS_GENERATED state', async () => {
+    it('should send booking documents email for a valid booking in Ticketed/booked state', async () => {
       // Idempotency: new operation
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
 
@@ -281,7 +281,7 @@ describe('Notification Service — Unit Tests', () => {
       expect(mockWithRetry).not.toHaveBeenCalled();
     });
 
-    it('should reject when booking is not in DOCUMENTS_GENERATED state', async () => {
+    it('should reject when booking is not in Ticketed/booked state', async () => {
       mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
       mockQueryOne.mockResolvedValueOnce(mockBooking({ status: 'BOOKING_CONFIRMED' }));
 
@@ -289,7 +289,7 @@ describe('Notification Service — Unit Tests', () => {
 
       await expect(
         service.sendBookingDocuments(TEST_BOOKING_ID, TEST_USER_ID, TEST_IDEMPOTENCY_KEY),
-      ).rejects.toThrow(/expected DOCUMENTS_GENERATED/i);
+      ).rejects.toThrow(/expected Ticketed\/booked/i);
 
       expect(mockIdempotencyFail).toHaveBeenCalledWith(TEST_IDEMPOTENCY_KEY);
       expect(mockWithRetry).not.toHaveBeenCalled();
@@ -450,76 +450,6 @@ describe('Notification Service — Unit Tests', () => {
     });
   });
 
-
-  describe('sendBookingDocuments — state transition to CUSTOMER_NOTIFIED', () => {
-    it('should transition booking from DOCUMENTS_GENERATED to CUSTOMER_NOTIFIED on success', async () => {
-      mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce(mockBooking());
-      mockQueryOne.mockResolvedValueOnce(mockUser());
-      mockQueryRows.mockResolvedValueOnce(mockDocuments());
-      mockStateMachineTransition.mockResolvedValueOnce('CUSTOMER_NOTIFIED');
-      mockIdempotencyComplete.mockResolvedValueOnce(undefined);
-      mockLogAudit.mockResolvedValueOnce(undefined);
-
-      await service.sendBookingDocuments(TEST_BOOKING_ID, TEST_USER_ID, TEST_IDEMPOTENCY_KEY);
-
-      expect(mockStateMachineTransition).toHaveBeenCalledWith(
-        TEST_BOOKING_ID,
-        'DOCUMENTS_GENERATED',
-        'CUSTOMER_NOTIFIED',
-        'notification_sent',
-      );
-    });
-
-    it('should fail idempotency when state machine transition fails', async () => {
-      mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce(mockBooking());
-      mockQueryOne.mockResolvedValueOnce(mockUser());
-      mockQueryRows.mockResolvedValueOnce(mockDocuments());
-
-      // State machine transition fails
-      mockStateMachineTransition.mockRejectedValueOnce(
-        new Error('Invalid transition: booking already in CUSTOMER_NOTIFIED state'),
-      );
-
-      mockIdempotencyFail.mockResolvedValueOnce(undefined);
-
-      await expect(
-        service.sendBookingDocuments(TEST_BOOKING_ID, TEST_USER_ID, TEST_IDEMPOTENCY_KEY),
-      ).rejects.toThrow(/Invalid transition/i);
-
-      expect(mockIdempotencyFail).toHaveBeenCalledWith(TEST_IDEMPOTENCY_KEY);
-      expect(mockIdempotencyComplete).not.toHaveBeenCalled();
-    });
-
-    it('should transition state only after email is successfully sent', async () => {
-      const callOrder: string[] = [];
-
-      mockIdempotencyStart.mockResolvedValueOnce({ alreadyCompleted: false });
-      mockQueryOne.mockResolvedValueOnce(mockBooking());
-      mockQueryOne.mockResolvedValueOnce(mockUser());
-      mockQueryRows.mockResolvedValueOnce(mockDocuments());
-
-      mockWithRetry.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
-        callOrder.push('email_sent');
-        const result = await fn();
-        return { success: true, result, attempts: 1 };
-      });
-
-      mockStateMachineTransition.mockImplementationOnce(async () => {
-        callOrder.push('state_transition');
-        return 'CUSTOMER_NOTIFIED';
-      });
-
-      mockIdempotencyComplete.mockResolvedValueOnce(undefined);
-      mockLogAudit.mockResolvedValueOnce(undefined);
-
-      await service.sendBookingDocuments(TEST_BOOKING_ID, TEST_USER_ID, TEST_IDEMPOTENCY_KEY);
-
-      // Email must be sent before state transition
-      expect(callOrder).toEqual(['email_sent', 'state_transition']);
-    });
-  });
 
 
   describe('sendEmail — generic email sending', () => {

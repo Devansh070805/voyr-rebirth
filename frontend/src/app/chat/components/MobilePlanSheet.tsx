@@ -24,14 +24,14 @@ export default function MobilePlanSheet({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 lg:hidden">
+    <div className="fixed inset-0 z-50">
       <button
         type="button"
         aria-label="Close plan sheet"
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
-      <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-hidden rounded-t-2xl border-t border-slate-200 bg-white shadow-2xl animate-slide-up">
+      <div className="absolute inset-x-0 bottom-0 md:left-auto md:right-4 md:bottom-24 md:w-[400px] md:rounded-2xl max-h-[85vh] overflow-hidden rounded-t-2xl border-t md:border border-slate-200 bg-white shadow-2xl animate-slide-up flex flex-col">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div className="flex items-center gap-2 font-bold text-slate-900">
             <PiMapTrifoldFill className="h-5 w-5 text-violet-500" />

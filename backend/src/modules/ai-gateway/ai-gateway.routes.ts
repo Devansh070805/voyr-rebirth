@@ -3,14 +3,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { createHash } from 'crypto';
 import { createAIGatewayService } from './ai-gateway.service.js';
 import type { UserPreferences } from './ai-gateway.service.js';
-import {
-  handleBrokerCardShortcut,
-  injectBrokerSystemBlock,
-  runStreamRoundtrip,
-} from './ai-stream-handler.js';
+import { runStreamRoundtrip } from './ai-stream-handler.js';
 import { writeSSE } from './broker-action.handler.js';
-import { routeBrokerFlow } from './broker-flow.router.js';
-import { parseTripIntentFromHistory } from './trip-intent.js';
 import { createLogger, redisClient, requireString, ValidationError } from '../../infra/index.js';
 import type { ChatMessage } from '../conversation/chat.types.js';
 import { createConversationService } from '../conversation/conversation.service.js';
@@ -42,13 +36,8 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
     'X-Accel-Buffering': 'no',
   });
   res.flushHeaders();
-
-  let clientDisconnected = false;
-  req.on('close', () => { 
-    if (!res.writableEnded) {
-      clientDisconnected = true; 
-    }
-  });
+  // Immediately write a ping to open the chunked stream pipe
+  res.write(': ping\n\n');
 
   const userId = req.headers['x-user-id'] as string;
   const cacheKey = conversationId
@@ -56,13 +45,19 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
     : null;
 
   try {
-    await pricingService.ensureRulesLoaded();
+    // Pricing rules are optional — don't block stream if DB is unavailable
+    try {
+      await pricingService.ensureRulesLoaded();
+    } catch (err) {
+      streamLogger.warn('Could not load pricing rules, continuing without them', { error: (err as Error).message });
+    }
 
     if (conversationId) {
       await contextBuilder.assertConversationOwnership(conversationId, userId);
       await conversationService.appendMessage(conversationId, { role: 'user', content: message });
     }
 
+    // Build conversation history from DB or request body
     let conversationHistory: ChatMessage[] = [];
     if (conversationId) {
       const planForCtx = await conversationService.getPlanData(conversationId);
@@ -73,7 +68,6 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
         planSummary: tripPlanService.buildPlanSummary(planForCtx),
         plan: planForCtx,
       });
-  res.flushHeaders();
       conversationHistory = contextBuilder.contextToHistory(brokerCtx);
     } else if (Array.isArray(req.body.conversation_history)) {
       conversationHistory = req.body.conversation_history.filter(
@@ -84,42 +78,12 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
       );
     }
 
-    const tripIntent = parseTripIntentFromHistory(conversationHistory, message);
-    let activePlan = emptyTripPlan();
+    // Load persisted plan — no legacy supply fetch. Gemini calls search_hotels → Xotelo.
+    const activePlan = conversationId
+      ? await conversationService.getPlanData(conversationId)
+      : emptyTripPlan();
 
-    if (conversationId) {
-      activePlan = await conversationService.getPlanData(conversationId);
-    }
-
-    if (tripIntent) {
-      activePlan = await tripPlanService.ensureFreshPlan(activePlan, tripIntent);
-      activePlan.customer_segment =
-        (await contextBuilder.getTravelProfile(userId))?.customer_segment ?? 'b2c';
-
-      if (conversationId) {
-        await conversationService.savePlanData(conversationId, activePlan);
-        if (tripIntent.destination) {
-          await contextBuilder.upsertDestinationHint(userId, tripIntent.destination);
-        }
-      }
-
-      const brokerAction = routeBrokerFlow(message, conversationHistory, activePlan);
-      const handled = await handleBrokerCardShortcut({
-        res,
-        message,
-        brokerAction,
-        plan: activePlan,
-        pricingService,
-        conversationId,
-        conversationService,
-      });
-  res.flushHeaders();
-      if (handled) return;
-
-      if (brokerAction.type === 'llm') {
-        conversationHistory = injectBrokerSystemBlock(conversationHistory, tripPlanService, activePlan);
-      }
-    }
+    streamLogger.info('Starting Gemini stream roundtrip', { conversationId, hasHistory: conversationHistory.length });
 
     const responseGuard = new StreamingResponseGuard(activePlan);
     const {
@@ -132,17 +96,18 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
       message,
       conversationHistory,
       activePlan,
-      tripIntent,
+      tripIntent: null, // Gemini handles intent detection via tool calls
       userId,
       conversationId,
-      clientDisconnected: () => req.destroyed || res.destroyed,
+      clientDisconnected: () => res.writableEnded || res.destroyed,
       tripPlanService,
       pricingService,
       curatedListings,
       conversationService,
       responseGuard,
     });
-  res.flushHeaders();
+
+    streamLogger.info('Gemini stream roundtrip complete', { eventsCount: events.length, assistantTextLen: assistantText.length });
 
     if (conversationId && events.length > 0) {
       await conversationService.appendMessage(conversationId, {
@@ -150,11 +115,10 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
         content: assistantText || '(Responded with interactive cards)',
         tool_calls: events.filter((e) => e.type === 'tool_call').map((e) => e.data),
       });
-  res.flushHeaders();
       await conversationService.compactRollingSummary(conversationId);
     }
 
-    if (!hasBookingTools && hasDisplayTools && events.length > 0 && !(req.destroyed || res.destroyed) && cacheKey) {
+    if (!hasBookingTools && hasDisplayTools && events.length > 0 && !res.destroyed && cacheKey) {
       try {
         await redisClient.setEx(cacheKey, 3600, JSON.stringify(events));
       } catch (err) {
@@ -162,8 +126,8 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
       }
     }
   } catch (error) {
-    streamLogger.error('Stream handler error', { error: (error as Error).message });
-    if (!(req.destroyed || res.destroyed)) {
+    streamLogger.error('Stream handler error', { error: (error as Error).message, stack: (error as Error).stack?.split('\n')[1] });
+    if (!res.destroyed) {
       writeSSE(res, { type: 'error', data: { message: 'Internal server error' } });
       writeSSE(res, { type: 'done', data: {} });
     }
@@ -171,6 +135,7 @@ router.post('/stream', async (req: Request, res: Response, _next: NextFunction) 
     res.end();
   }
 });
+
 
 router.post('/enrich', async (req: Request, res: Response, next: NextFunction) => {
   try {

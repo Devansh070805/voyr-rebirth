@@ -10,10 +10,12 @@ export const KNOWN_DESTINATIONS: Record<string, KnownDestination> = {
   london: { cityid: '60783', country: 'UK', keywords: ['london', 'england', 'uk'] },
   tokyo: { cityid: '60732', country: 'Japan', keywords: ['tokyo', 'japan'] },
   dubai: { cityid: '60716', country: 'UAE', keywords: ['dubai', 'uae'] },
+  bali: { cityid: '602651', country: 'Indonesia', keywords: ['bali', 'indonesia'] },
 };
 
 import type { FollowUpIntent, TripIntent } from '../trip-plan/trip-intent.types.js';
 export type { FollowUpIntent, TripIntent } from '../trip-plan/trip-intent.types.js';
+import type { ChatMessage } from '../conversation/chat.types.js';
 
 export interface DetectedDestination {
   name: string;
@@ -68,6 +70,7 @@ export function detectFollowUpIntent(message: string): FollowUpIntent {
   if (/flight|airline|route/.test(lower)) return 'flights';
   if (/budget|cost|price/.test(lower)) return 'budget';
   if (/itinerary|day by day/.test(lower)) return 'itinerary';
+  if (/ticket|show/.test(lower)) return 'tickets';
   return null;
 }
 
@@ -103,4 +106,17 @@ function buildTripIntent(destination: DetectedDestination, message: string): Tri
     cityid: destination.cityid,
     country: destination.country,
   };
+}
+
+export function parseTripIntentFromHistory(history: ChatMessage[], currentMessage: string): TripIntent | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'user') {
+      const dest = detectDestination(history[i].content);
+      if (dest) {
+        const combined = history[i].content + ' ' + currentMessage;
+        return buildTripIntent(dest, combined);
+      }
+    }
+  }
+  return null;
 }

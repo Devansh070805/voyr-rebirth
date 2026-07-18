@@ -423,11 +423,11 @@ describe('Payment Service — Unit Tests', () => {
       // Booking lookup for state transition
       mockQueryOne.mockResolvedValueOnce({
         id: TEST_BOOKING_ID,
-        status: 'PAYMENT_PENDING',
+        status: 'Requested',
       });
 
       // State machine transition
-      mockStateMachineTransition.mockResolvedValueOnce('PAYMENT_PAID');
+      mockStateMachineTransition.mockResolvedValueOnce('Paid');
 
       // Auto-create booking
       mockCreateBooking.mockResolvedValueOnce({ id: TEST_BOOKING_ID });
@@ -481,11 +481,11 @@ describe('Payment Service — Unit Tests', () => {
       // Booking lookup
       mockQueryOne.mockResolvedValueOnce({
         id: TEST_BOOKING_ID,
-        status: 'PAYMENT_PENDING',
+        status: 'Requested',
       });
 
-      // State machine transition: PAYMENT_PENDING → PAYMENT_PAID
-      mockStateMachineTransition.mockResolvedValueOnce('PAYMENT_PAID');
+      // State machine transition: Requested → Paid
+      mockStateMachineTransition.mockResolvedValueOnce('Paid');
 
       // Auto-create booking
       mockCreateBooking.mockResolvedValueOnce({ id: TEST_BOOKING_ID });
@@ -508,11 +508,11 @@ describe('Payment Service — Unit Tests', () => {
       expect(eventCall[0]).toContain('INSERT INTO payment_events');
       expect(eventCall[1][0]).toBe(TEST_PAYMENT_ID);
 
-      // Verify state machine was called for PAYMENT_PENDING → PAYMENT_PAID
+      // Verify state machine was called for Requested → Paid
       expect(mockStateMachineTransition).toHaveBeenCalledWith(
         TEST_BOOKING_ID,
-        'PAYMENT_PENDING',
-        'PAYMENT_PAID',
+        'Requested',
+        'Paid',
         'webhook_success',
       );
     });
@@ -541,11 +541,11 @@ describe('Payment Service — Unit Tests', () => {
       // Booking lookup
       mockQueryOne.mockResolvedValueOnce({
         id: TEST_BOOKING_ID,
-        status: 'PAYMENT_PENDING',
+        status: 'Requested',
       });
 
-      // State machine transition: PAYMENT_PENDING → PAYMENT_FAILED
-      mockStateMachineTransition.mockResolvedValueOnce('PAYMENT_FAILED');
+      // State machine transition: Requested → Failed
+      mockStateMachineTransition.mockResolvedValueOnce('Failed');
 
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
@@ -564,11 +564,11 @@ describe('Payment Service — Unit Tests', () => {
       const eventCall = mockClient.query.mock.calls[1];
       expect(eventCall[0]).toContain('INSERT INTO payment_events');
 
-      // Verify state machine was called for PAYMENT_PENDING → PAYMENT_FAILED
+      // Verify state machine was called for Requested → Failed
       expect(mockStateMachineTransition).toHaveBeenCalledWith(
         TEST_BOOKING_ID,
-        'PAYMENT_PENDING',
-        'PAYMENT_FAILED',
+        'Requested',
+        'Failed',
         'webhook_failure',
       );
 
@@ -597,10 +597,10 @@ describe('Payment Service — Unit Tests', () => {
 
       mockQueryOne.mockResolvedValueOnce({
         id: TEST_BOOKING_ID,
-        status: 'PAYMENT_PENDING',
+        status: 'Requested',
       });
 
-      mockStateMachineTransition.mockResolvedValueOnce('PAYMENT_PAID');
+      mockStateMachineTransition.mockResolvedValueOnce('Paid');
       mockCreateBooking.mockResolvedValueOnce({ id: TEST_BOOKING_ID });
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
@@ -612,8 +612,8 @@ describe('Payment Service — Unit Tests', () => {
 
       expect(mockStateMachineTransition).toHaveBeenCalledWith(
         TEST_BOOKING_ID,
-        'PAYMENT_PENDING',
-        'PAYMENT_PAID',
+        'Requested',
+        'Paid',
         'webhook_success',
       );
     });
@@ -639,10 +639,10 @@ describe('Payment Service — Unit Tests', () => {
 
       mockQueryOne.mockResolvedValueOnce({
         id: TEST_BOOKING_ID,
-        status: 'PAYMENT_PENDING',
+        status: 'Requested',
       });
 
-      mockStateMachineTransition.mockResolvedValueOnce('PAYMENT_FAILED');
+      mockStateMachineTransition.mockResolvedValueOnce('Failed');
       mockIdempotencyComplete.mockResolvedValueOnce(undefined);
       mockLogAudit.mockResolvedValueOnce(undefined);
 
@@ -653,8 +653,8 @@ describe('Payment Service — Unit Tests', () => {
 
       expect(mockStateMachineTransition).toHaveBeenCalledWith(
         TEST_BOOKING_ID,
-        'PAYMENT_PENDING',
-        'PAYMENT_FAILED',
+        'Requested',
+        'Failed',
         'webhook_failure',
       );
     });

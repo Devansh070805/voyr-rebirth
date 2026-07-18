@@ -12,7 +12,7 @@ const logger = createLogger('display-tool-guard');
 export const PLAN_GROUNDED_DISPLAY_TOOLS = new Set([
   'show_itinerary',
   'show_budget_breakdown',
-  'show_hotel_options',
+  // show_hotel_options is excluded — handled by Xotelo with real data
   'show_activity_options',
   'show_flight_options',
   'show_ticket_options',
@@ -42,6 +42,7 @@ function validateInformationalDisplayTool(
 /**
  * Replace LLM display-tool arguments with server-built plan_data cards.
  * Drops calls that cannot be grounded in live inventory or curated listings.
+ * Exception: show_hotel_options with actual options passes through (Xotelo data).
  */
 export function sanitizeDisplayToolCall(
   toolData: ToolCall,
@@ -49,6 +50,21 @@ export function sanitizeDisplayToolCall(
   pricing?: PricingService,
 ): DisplayToolCall | null {
   if (!DISPLAY_TOOL_NAMES.has(toolData.name)) return null;
+
+  // show_hotel_options: if it already has options populated (from Xotelo), pass through directly
+  if (toolData.name === 'show_hotel_options') {
+    const options = toolData.arguments.options;
+    if (Array.isArray(options) && options.length > 0) {
+      return { id: toolData.id, name: toolData.name, arguments: toolData.arguments };
+    }
+    // No options yet — try to build from plan
+    const serverTool = buildDisplayToolsFromPlan(plan, pricing).find((t) => t.name === toolData.name);
+    if (!serverTool) {
+      logger.info('Dropped ungrounded show_hotel_options — no plan_data or Xotelo options', { tool: toolData.name });
+      return null;
+    }
+    return { id: toolData.id, name: toolData.name, arguments: serverTool.arguments };
+  }
 
   if (!PLAN_GROUNDED_DISPLAY_TOOLS.has(toolData.name)) {
     if (!validateInformationalDisplayTool(toolData.name, toolData.arguments, plan)) {
@@ -73,3 +89,4 @@ export function sanitizeDisplayToolCall(
     arguments: serverTool.arguments,
   };
 }
+

@@ -21,16 +21,19 @@ import type { TripIntent } from './trip-intent.js';
 import type { BrokerFlowAction } from './broker-flow.router.js';
 import { StreamingResponseGuard } from './streaming-response-guard.js';
 import { createLogger } from '../../infra/index.js';
+import { searchHotelsForDisplay } from '../xotelo/xotelo.service.js';
 
 const logger = createLogger('ai-stream-handler');
 
 export const DATA_TOOLS = new Set([
-  'search_hotels',
   'search_places',
   'search_web',
   'search_flights',
   'search_airports',
 ]);
+
+// search_hotels is handled inline via Xotelo — not via the supply-refresh loop
+export const HOTEL_SEARCH_TOOL = 'search_hotels';
 
 const DATA_REFRESH_CONTINUATION =
   'Continue helping the traveler using the refreshed inventory above. '
@@ -99,6 +102,7 @@ async function executeStreamRound(
     if (event.type === 'text_delta') {
       const chunk = event.data.text;
       const guardedChunk = params.responseGuard.append(chunk);
+      logger.info('interceptSSE text_delta', { chunkLen: chunk.length, guardedLen: guardedChunk.length, writableEnded: params.res.writableEnded });
       if (!guardedChunk) return;
       const guardedEvent: StreamEvent = { type: 'text_delta', data: { text: guardedChunk } };
       events.push(guardedEvent);
@@ -106,15 +110,74 @@ async function executeStreamRound(
       return;
     }
 
+    logger.info('interceptSSE non-text event', { type: event.type });
     events.push(event);
     writeSSE(params.res, event);
   }
 
   await streamChat(message, conversationHistory, async (event: StreamEvent) => {
-    if (params.clientDisconnected()) return;
+    if (params.clientDisconnected()) {
+      logger.warn('clientDisconnected is TRUE, dropping event', { eventType: event.type });
+      return;
+    }
 
     if (event.type === 'tool_call') {
       const toolData = event.data;
+
+      if (toolData.name === HOTEL_SEARCH_TOOL) {
+        logger.info('Executing hotel search via Xotelo', { args: toolData.arguments });
+        try {
+          const args = toolData.arguments as Record<string, unknown>;
+          const hotels = await searchHotelsForDisplay({
+            destination: (args.destination as string) || '',
+            checkin: args.checkin as string | undefined,
+            checkout: args.checkout as string | undefined,
+            adults: (args.adults as number) || 2,
+            rooms: (args.rooms as number) || 1,
+            currency: (args.cur as string) || 'USD',
+            limit: 8,
+          });
+
+          if (hotels.length > 0) {
+            // Directly emit the hotel options card without another AI round
+            const hotelCardEvent: StreamEvent = {
+              type: 'tool_call',
+              data: {
+                id: `xotelo_hotels_${Date.now()}`,
+                name: 'show_hotel_options',
+                arguments: {
+                  destination: args.destination,
+                  options: hotels.map((h) => ({
+                    name: h.name,
+                    category: h.category,
+                    price_per_night: h.price_per_night,
+                    currency: h.currency,
+                    rating: h.rating || 4,
+                    highlights: h.highlights.length > 0 ? h.highlights : ['Great location', 'Popular choice'],
+                    location: h.location,
+                    hotel_key: h.hotel_key,
+                    image: h.image,
+                    url: h.url,
+                    rates: h.rates,
+                  })),
+                },
+              },
+            };
+            hasDisplayTools = true;
+            interceptSSE(hotelCardEvent);
+          } else {
+            // No results — tell Gemini so it can respond gracefully
+            const noResultText: StreamEvent = {
+              type: 'text_delta',
+              data: { text: `I wasn't able to find hotels in **${args.destination}** right now. Please try a slightly different destination name or check back shortly.` },
+            };
+            interceptSSE(noResultText);
+          }
+        } catch (err) {
+          logger.error('Xotelo hotel search failed', { error: (err as Error).message });
+        }
+        return;
+      }
 
       if (DATA_TOOLS.has(toolData.name)) {
         pendingDataTools.push(toolData);
@@ -150,6 +213,7 @@ async function executeStreamRound(
         });
         return;
       }
+
     }
 
     if (event.type === 'done') {

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { getAdminHeaders, resolveApiUrl } from "../lib/api-url";
@@ -7,7 +7,7 @@ import { fetchWithAuth } from "../lib/utils";
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
-  user: { email: string } | null;
+  user: { email: string; accountType?: string; accountId?: string } | null;
   customerSegment: "b2c" | "b2b";
   hasB2BAccess: boolean;
   partner: { id: string; name: string; company_code: string } | null;
@@ -16,8 +16,8 @@ interface AuthState {
 export type ApiFetch = (path: string, init?: RequestInit) => Promise<Response>;
 
 interface AuthContextValue extends AuthState {
-  login: (email: string) => Promise<void>;
-  verifyOtp: (email: string, otp: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<any>;
+  register: (email: string, password: string, accountType?: string) => Promise<any>;
   loginWithGoogle: (credential: string) => Promise<void>;
   refreshAccessToken: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -70,7 +70,7 @@ function clearTokens() {
   localStorage.removeItem(USER_ID_KEY);
 }
 
-function getStoredUser(): { email: string } | null {
+function getStoredUser(): { email: string; accountType?: string; accountId?: string } | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
@@ -82,7 +82,7 @@ function getStoredUser(): { email: string } | null {
   }
 }
 
-function storeUser(user: { email: string }) {
+function storeUser(user: { email: string; accountType?: string; accountId?: string }) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
@@ -179,41 +179,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     init();
   }, [fetchProfile]);
 
-  const login = useCallback(async (email: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     const res = await fetch(`${API_BASE_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || "Failed to send OTP");
-    }
-  }, []);
-
-  const verifyOtp = useCallback(async (email: string, otp: string) => {
-    const res = await fetch(`${API_BASE_URL}/auth/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, otp }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || "Invalid or expired OTP");
+      throw new Error(data.message || "Invalid credentials");
     }
     const { access_token, refresh_token } = await res.json();
     storeTokens(access_token, refresh_token);
-    storeUser({ email });
+    const payload = decodeJwtPayload(access_token);
+    const accountType = (payload?.account_type as string) || undefined;
+    const accountId = (payload?.account_id as string) || undefined;
+    const userObj = { email, accountType, accountId };
+    storeUser(userObj);
     const profile = await fetchProfile(profileFetchWithToken(access_token));
     setState({
       isAuthenticated: true,
       isLoading: false,
-      user: { email },
+      user: userObj,
       customerSegment: profile?.customerSegment ?? "b2c",
       hasB2BAccess: profile?.hasB2BAccess ?? false,
       partner: profile?.partner ?? null,
     });
+    return userObj;
   }, [fetchProfile]);
+
+  const register = useCallback(async (email: string, password: string, accountType?: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, accountType }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || "Registration failed");
+    }
+    const { access_token, refresh_token } = await res.json();
+    storeTokens(access_token, refresh_token);
+    
+    const payload = decodeJwtPayload(access_token);
+    const resolvedAccountType = (payload?.account_type as string) || accountType || undefined;
+    const resolvedAccountId = (payload?.account_id as string) || undefined;
+    const userObj = { email, accountType: resolvedAccountType, accountId: resolvedAccountId };
+    
+    storeUser(userObj);
+    const profile = await fetchProfile(profileFetchWithToken(access_token));
+    setState({
+      isAuthenticated: true,
+      isLoading: false,
+      user: userObj,
+      customerSegment: profile?.customerSegment ?? "b2c",
+      hasB2BAccess: profile?.hasB2BAccess ?? false,
+      partner: profile?.partner ?? null,
+    });
+    return userObj;
+  }, [fetchProfile]);
+
 
   const loginWithGoogle = useCallback(async (credential: string) => {
     const res = await fetch(`${API_BASE_URL}/auth/google`, {
@@ -339,7 +364,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...state,
       login,
-      verifyOtp,
+      register,
       loginWithGoogle,
       refreshAccessToken,
       refreshProfile,
@@ -347,7 +372,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       apiFetch,
       adminFetch,
     }),
-    [state, login, verifyOtp, loginWithGoogle, refreshAccessToken, refreshProfile, logout, apiFetch, adminFetch],
+    [state, login, register, loginWithGoogle, refreshAccessToken, refreshProfile, logout, apiFetch, adminFetch],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,19 +1,8 @@
-﻿/**
- * Auth Service — Email OTP login, JWT access tokens, refresh tokens.
- *
- * Implements the AuthService interface from the design document.
- * - sendOtp(email): generate 6-digit OTP, store with expiry, send via email provider
- * - verifyOtp(email, otp): validate OTP, return JWT access + refresh tokens
- * - refreshToken(refreshToken): validate refresh token, issue new access token
- * - validateJwt(token): decode and verify JWT, return payload
- */
-
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { query, queryOne, transaction } from '../../db/index.js';
 import { createLogger } from '../../infra/index.js';
 import { UnauthorizedError } from '../../infra/error-handler.js';
-import { getResendFromAddress, logResendFailure } from '../../infra/resend.js';
 import { OAuth2Client } from 'google-auth-library';
 import { createPartnerService } from '../partner/partner.service.js';
 
@@ -37,13 +26,15 @@ export interface RefreshResponse {
 export interface JwtPayload {
   sub: string; // user id
   email: string;
+  account_type?: string;
+  account_id?: string;
   iat: number;
   exp: number;
 }
 
 export interface AuthService {
-  sendOtp(email: string): Promise<LoginResponse>;
-  verifyOtp(email: string, otp: string): Promise<VerifyResponse>;
+  register(email: string, password: string, accountType?: string): Promise<VerifyResponse>;
+  login(email: string, password: string): Promise<VerifyResponse>;
   refreshToken(refreshToken: string): Promise<RefreshResponse>;
   revokeRefreshToken(refreshToken: string): Promise<void>;
   validateJwt(token: string): Promise<JwtPayload>;
@@ -58,39 +49,21 @@ const JWT_SECRET = process.env.JWT_SECRET || (() => {
 })();
 const JWT_ACCESS_EXPIRY = process.env.JWT_ACCESS_EXPIRY || '15m';
 const JWT_REFRESH_EXPIRY = process.env.JWT_REFRESH_EXPIRY || '7d';
-const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || '10', 10);
 
 const googleClient = new OAuth2Client(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || 'your-google-client-id');
 
-/**
- * Generate a cryptographically random 6-digit OTP.
- */
-function generateOtp(): string {
-  const num = crypto.randomInt(0, 1_000_000);
-  return num.toString().padStart(6, '0');
-}
-
-/**
- * Hash a string (OTP or refresh token) for storage.
- */
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-/**
- * Sign a JWT access token.
- */
-function signAccessToken(userId: string, email: string): string {
+function signAccessToken(userId: string, email: string, accountType?: string, accountId?: string): string {
   return jwt.sign(
-    { sub: userId, email },
+    { sub: userId, email, account_type: accountType, account_id: accountId },
     JWT_SECRET,
     { expiresIn: JWT_ACCESS_EXPIRY },
   );
 }
 
-/**
- * Sign a JWT refresh token (longer-lived).
- */
 function signRefreshToken(userId: string, email: string): string {
   return jwt.sign(
     { sub: userId, email, type: 'refresh' },
@@ -99,112 +72,107 @@ function signRefreshToken(userId: string, email: string): string {
   );
 }
 
-/**
- * Send OTP email via Resend.
- * In development, OTP is only logged when DEV_LOG_OTP=true (never in production).
- */
-async function sendOtpEmail(email: string, otp: string): Promise<void> {
-  if (process.env.NODE_ENV === 'test') {
-    return;
-  }
+// Basic scrypt hashing for MVP
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivedKey = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${derivedKey}`;
+}
 
-  const resendApiKey = process.env.RESEND_API_KEY;
-
-  if (!resendApiKey) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('RESEND_API_KEY is required in production');
-    }
-    if (process.env.DEV_LOG_OTP === 'true') {
-      logger.info(`[DEV] OTP for ${email}: ${otp}`);
-    } else {
-      logger.info('[DEV] OTP generated (set DEV_LOG_OTP=true to log code; RESEND not configured)', { email });
-    }
-    return;
-  }
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: getResendFromAddress(),
-      to: [email],
-      subject: 'Your Voyr Login Code',
-      html: `<p>Your verification code is: <strong>${otp}</strong></p><p>This code expires in ${OTP_EXPIRY_MINUTES} minutes.</p>`,
-    }),
-  });
-
-  if (!response.ok) {
-    throw await logResendFailure(logger, response, { email, context: 'otp' });
-  }
-
-  logger.info('OTP email sent', { email });
+function verifyPassword(password: string, hash: string): boolean {
+  if (!hash || !hash.includes(':')) return false;
+  const [salt, key] = hash.split(':');
+  const derivedKey = crypto.scryptSync(password, salt, 64).toString('hex');
+  return key === derivedKey;
 }
 
 export function createAuthService(): AuthService {
   return {
-    async sendOtp(email: string): Promise<LoginResponse> {
-      const otp = generateOtp();
-      const otpHash = hashToken(otp);
-      const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+    async register(email: string, password: string, accountType = 'Individual'): Promise<VerifyResponse> {
+      const passwordHash = hashPassword(password);
 
-      await transaction(async (client) => {
-        await client.query(
-          `INSERT INTO users (email) VALUES ($1)
-           ON CONFLICT (email) DO NOTHING`,
-          [email],
-        );
-
-        await client.query(
-          `INSERT INTO otp_codes (email, otp_hash, expires_at)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (email) DO UPDATE SET otp_hash = $2, expires_at = $3, attempts = 0`,
-          [email, otpHash, expiresAt.toISOString()],
-        );
-      });
-
-      await sendOtpEmail(email, otp);
-
-      logger.info('OTP sent', { email });
-      return { success: true, message: 'Verification code sent to your email' };
-    },
-
-    async verifyOtp(email: string, otp: string): Promise<VerifyResponse> {
-      const otpHash = hashToken(otp);
-
-      return transaction(async (tx) => {
-        const record = await tx.query(
-          `SELECT email, otp_hash, expires_at, attempts FROM otp_codes WHERE email = $1`,
-          [email],
-        );
-
-        if (record.rows.length === 0) {
-          throw new UnauthorizedError('Invalid credentials');
+      const result = await transaction(async (tx) => {
+        // Check if user exists
+        let user;
+        const existing = await tx.query(`SELECT id, email, password_hash FROM users WHERE email = $1`, [email]);
+        if (existing.rows.length > 0) {
+          if (existing.rows[0].password_hash) {
+            throw new UnauthorizedError('Email already in use');
+          }
+          // Legacy OTP user has no password yet, set it for them
+          await tx.query(`UPDATE users SET password_hash = $2 WHERE email = $1`, [email, passwordHash]);
+          user = existing.rows[0];
+        } else {
+          const userResult = await tx.query(
+            `INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email`,
+            [email, passwordHash],
+          );
+          user = userResult.rows[0];
         }
 
-        const otpRecord = record.rows[0];
+        // Create Account
+        const accountResult = await tx.query(
+          `INSERT INTO accounts (type, name) VALUES ($1, $2) RETURNING id`,
+          [accountType, `${email.split('@')[0]}'s Account`]
+        );
+        const accountId = accountResult.rows[0].id;
 
-        if (otpRecord.attempts >= 5) {
-          throw new UnauthorizedError('Too many attempts. Please request a new code.');
+        // Link User to Account
+        await tx.query(
+          `INSERT INTO user_accounts (user_id, account_id, role, is_primary) VALUES ($1, $2, $3, $4)`,
+          [user.id, accountId, 'OWNER', true]
+        );
+
+        // Provision additional profiles based on type
+        if (accountType === 'TravelAgent') {
+          await tx.query(
+            `INSERT INTO travel_agent_profiles (account_id, agency_name, contact_email) VALUES ($1, $2, $3)`,
+            [accountId, `${email.split('@')[0]} Agency`, email]
+          );
+          // Also create a wallet
+          await tx.query(
+            `INSERT INTO wallets (account_id, balance, currency) VALUES ($1, $2, $3)`,
+            [accountId, 0, 'USD']
+          );
+        } else if (accountType === 'Corporate') {
+          await tx.query(
+            `INSERT INTO corporate_profiles (account_id, company_name, contact_email) VALUES ($1, $2, $3)`,
+            [accountId, `${email.split('@')[0]} Corp`, email]
+          );
         }
+
+
+
+        const accessToken = signAccessToken(user.id, user.email, accountType, accountId);
+        const refreshToken = signRefreshToken(user.id, user.email);
 
         await tx.query(
-          `UPDATE otp_codes SET attempts = attempts + 1 WHERE email = $1`,
-          [email],
+          `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+           VALUES ($1, $2, $3)`,
+          [user.id, hashToken(refreshToken), new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)]
         );
 
-        if (new Date() > new Date(otpRecord.expires_at)) {
-          throw new UnauthorizedError('Code expired. Please request a new one.');
-        }
+        logger.info('User registered', { userId: user.id });
 
-        if (otpRecord.otp_hash !== otpHash) {
-          throw new UnauthorizedError('Invalid credentials');
-        }
+        return {
+          user_id: user.id,
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        };
+      });
 
+      await partnerService.syncUserSegment(result.user_id, email);
+
+      return {
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+      };
+    },
+
+    async login(email: string, password: string): Promise<VerifyResponse> {
+      return transaction(async (tx) => {
         const userResult = await tx.query(
-          `SELECT id, email FROM users WHERE email = $1`,
+          `SELECT id, email, password_hash FROM users WHERE email = $1`,
           [email],
         );
 
@@ -214,11 +182,27 @@ export function createAuthService(): AuthService {
 
         const user = userResult.rows[0];
 
-        await tx.query(`DELETE FROM otp_codes WHERE email = $1`, [email]);
+        if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
+          throw new UnauthorizedError('Invalid credentials');
+        }
 
         await partnerService.syncUserSegment(user.id, user.email);
 
-        const accessToken = signAccessToken(user.id, user.email);
+        // Fetch primary account
+        const accountResult = await tx.query(
+          `SELECT a.id, a.type FROM accounts a
+           JOIN user_accounts ua ON ua.account_id = a.id
+           WHERE ua.user_id = $1 AND ua.is_primary = true LIMIT 1`,
+          [user.id]
+        );
+        let accountId;
+        let accountType;
+        if (accountResult.rows.length > 0) {
+          accountId = accountResult.rows[0].id;
+          accountType = accountResult.rows[0].type;
+        }
+
+        const accessToken = signAccessToken(user.id, user.email, accountType, accountId);
         const refreshToken = signRefreshToken(user.id, user.email);
 
         await tx.query(
@@ -227,7 +211,7 @@ export function createAuthService(): AuthService {
           [user.id, hashToken(refreshToken), new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)]
         );
 
-        logger.info('User authenticated via OTP', { userId: user.id });
+        logger.info('User authenticated via password', { userId: user.id });
 
         return {
           access_token: accessToken,
@@ -252,7 +236,6 @@ export function createAuthService(): AuthService {
         );
 
         if (!record || record.revoked_at) {
-          // Token reused or revoked, could be a security risk. Best practice is to revoke all user's tokens, but here we just deny
           throw new UnauthorizedError('Refresh token revoked or invalid');
         }
 

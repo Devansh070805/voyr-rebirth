@@ -105,7 +105,7 @@ export function createGeoapifyService(): GeoapifyService {
           const geoUrl = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(params.text)}&limit=1&apiKey=${apiKey}`;
           const geoRes = await fetch(geoUrl, { signal: AbortSignal.timeout(5000) });
           if (geoRes.ok) {
-            const geoData = await geoRes.json();
+            const geoData = await geoRes.json() as any;
             const placeId = geoData?.features?.[0]?.properties?.place_id;
             if (placeId) {
               filter = `place:${placeId}`;

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Document Service — Queue-based document generation and R2 upload.
  */
 
@@ -7,19 +7,18 @@ import PDFDocument from 'pdfkit';
 import { queryOne, queryRows, query } from '../../db/index.js';
 import {
   createIdempotencyService,
-  createStateMachineEngine,
   createLogger,
+  RETRY_QUEUE_CONSUMER,
   NotFoundError,
   ValidationError,
   withRetry,
-  RETRY_QUEUE_CONSUMER,
   isHttpRetryable,
 } from '../../infra/index.js';
 import { logAudit } from '../../infra/audit.service.js';
 
 const logger = createLogger('document-service');
 const idempotencyService = createIdempotencyService();
-const stateMachine = createStateMachineEngine();
+
 
 
 const MAX_RETRIES = 5;
@@ -205,9 +204,9 @@ export function createDocumentService(
           throw new NotFoundError(`Booking ${bookingId} not found`);
         }
 
-        if (booking.status !== 'DOCUMENTS_GENERATING') {
+        if (booking.status !== 'Ticketed/booked') {
           throw new ValidationError(
-            `Booking ${bookingId} is in state ${booking.status}, expected DOCUMENTS_GENERATING`,
+            `Booking ${bookingId} is in state ${booking.status}, expected Ticketed/booked`,
           );
         }
 
@@ -435,13 +434,7 @@ export function createDocumentService(
             [jobId],
           );
 
-          // Transition booking: DOCUMENTS_GENERATING → DOCUMENTS_GENERATED
-          await stateMachine.transition(
-            bookingId,
-            'DOCUMENTS_GENERATING',
-            'DOCUMENTS_GENERATED',
-            'worker_complete',
-          );
+          // Transition booking: (State unchanged in the new 8-state model)
 
           await logAudit('system', 'document.generation_complete', 'booking', bookingId, {
             job_id: jobId,
@@ -476,20 +469,7 @@ export function createDocumentService(
 
           await queue.publishToDeadLetter(message, errorMessage);
 
-          // Transition booking to FAILED
-          try {
-            await stateMachine.transition(
-              bookingId,
-              'DOCUMENTS_GENERATING',
-              'FAILED',
-              'max_retries_exceeded',
-            );
-          } catch (transitionError) {
-            logger.error('Failed to transition booking to FAILED state', {
-              bookingId,
-              error: (transitionError as Error).message,
-            });
-          }
+          // Transition booking to FAILED (Removed in the new 8-state model)
 
           await logAudit('system', 'document.generation_failed', 'booking', bookingId, {
             job_id: jobId,

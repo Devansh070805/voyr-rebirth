@@ -8,6 +8,7 @@ import {
   PiSunFill,
   PiUsersFill,
   PiIdentificationCardFill,
+  PiBuildingsFill,
 } from "react-icons/pi";
 import type { BookingState } from "@/types/chat";
 import TripMap from "./TripMap";
@@ -31,12 +32,12 @@ export default function RightPanel({
   const [activeTab, setActiveTab] = useState<"itinerary" | "details" | "map">("itinerary");
   const [expanded, setExpanded] = useState(false);
 
-  const hasTrip = !!tripState.destination;
+  const hasTrip = !!tripState.destination || !!planSelections?.hotel || (planSelections?.activities?.length ?? 0) > 0 || !!planSelections?.flight || !!planSelections?.ticket;
   const visibleDays = expanded ? tripState.days_plan : tripState.days_plan.slice(0, 4);
 
   const asideClass = embedded
     ? "w-full shrink-0 bg-white px-3 py-4 overflow-y-auto"
-    : "hidden w-[340px] shrink-0 border-l border-slate-100 bg-white px-5 py-6 overflow-y-auto lg:block";
+    : "hidden w-[360px] shrink-0 border-l border-slate-100 bg-white px-5 py-6 overflow-y-auto lg:flex lg:flex-col";
 
   if (!hasTrip) {
     return (
@@ -120,28 +121,44 @@ export default function RightPanel({
                   <PiUsersFill className="h-4 w-4" /> {tripState.travelers}
                 </span>
               </div>
-              <div className="space-y-3">
-                {visibleDays.map((day, idx) => (
-                  <div key={day.day_number} className="grid grid-cols-[72px_1fr] gap-3">
-                    <img
-                      src={DAY_IMAGES[idx % DAY_IMAGES.length]}
-                      alt=""
-                      className="h-[64px] w-[72px] rounded-lg object-cover"
-                    />
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <PiSunFill className="h-3 w-3 text-amber-400" />
-                        <span className="text-xs font-bold text-slate-900">
-                          Day {day.day_number} — {day.title}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                        {day.description}
-                      </p>
-                    </div>
+
+              {/* Selected hotel card — shown before day cards */}
+              {planSelections?.hotel && (
+                <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <PiBuildingsFill className="h-5 w-5 shrink-0 text-emerald-600" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Selected Hotel</div>
+                    <div className="truncate text-sm font-bold text-slate-900">{planSelections.hotel.name}</div>
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
+
+              {visibleDays.length === 0 ? (
+                <p className="text-sm text-slate-400">Ask the AI to plan your itinerary and it will appear here.</p>
+              ) : (
+                <div className="space-y-3">
+                  {visibleDays.map((day, idx) => (
+                    <div key={day.day_number} className="grid grid-cols-[72px_1fr] gap-3">
+                      <img
+                        src={DAY_IMAGES[idx % DAY_IMAGES.length]}
+                        alt=""
+                        className="h-[64px] w-[72px] rounded-lg object-cover"
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <PiSunFill className="h-3 w-3 text-amber-400" />
+                          <span className="text-xs font-bold text-slate-900">
+                            Day {day.day_number} — {day.title}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                          {day.description}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {!expanded && tripState.days_plan.length > 4 && (
                 <button
                   onClick={() => setExpanded(true)}
@@ -178,6 +195,12 @@ export default function RightPanel({
                   {tripState.travelers === 1 ? "Traveler" : "Travelers"}
                 </div>
               </div>
+              {planSelections?.hotel && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Hotel</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{planSelections.hotel.name}</div>
+                </div>
+              )}
               {tripState.estimated_budget && (
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400">

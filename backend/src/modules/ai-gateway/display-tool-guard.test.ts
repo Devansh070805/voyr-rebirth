@@ -28,28 +28,28 @@ function planWithHotels(): TripPlan {
 }
 
 describe('sanitizeDisplayToolCall', () => {
-  it('replaces LLM hotel card args with plan_data inventory', () => {
-    const plan = planWithHotels();
+  it('passes through show_hotel_options when it contains real Xotelo options', () => {
+    const plan = { ...emptyTripPlan(), destination: 'bali' };
+    const xoteloOptions = [
+      { name: 'Grand Hyatt Bali', category: 'Luxury', price_per_night: 250, currency: 'USD', rating: 5, highlights: ['Pool', 'Spa'] },
+    ];
     const sanitized = sanitizeDisplayToolCall(
       {
-        id: 'llm-1',
+        id: 'xotelo-1',
         name: 'show_hotel_options',
-        arguments: {
-          destination: 'Bali',
-          options: [{ name: 'Fabricated Palace', category: 'Luxury', price_per_night: 50, currency: 'USD', rating: 5, highlights: [] }],
-        },
+        arguments: { destination: 'Bali', options: xoteloOptions },
       },
       plan,
     );
 
     expect(sanitized).not.toBeNull();
-    expect(sanitized!.id).toBe('llm-1');
+    expect(sanitized!.id).toBe('xotelo-1');
     const options = (sanitized!.arguments as { options: { name: string }[] }).options;
-    expect(options.some((o) => o.name === 'Live Resort Ubud')).toBe(true);
-    expect(options.some((o) => o.name === 'Fabricated Palace')).toBe(false);
+    // Should pass through the Xotelo data unchanged
+    expect(options.some((o) => o.name === 'Grand Hyatt Bali')).toBe(true);
   });
 
-  it('drops plan-grounded tools when plan has no backing data', () => {
+  it('drops show_hotel_options with empty options when plan has no backing data', () => {
     const plan = { ...emptyTripPlan(), destination: 'bali' };
     const sanitized = sanitizeDisplayToolCall(
       { id: 'llm-2', name: 'show_hotel_options', arguments: { destination: 'Bali', options: [] } },

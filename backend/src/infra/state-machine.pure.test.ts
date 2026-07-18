@@ -1,17 +1,3 @@
-/**
- * Pure State Machine Tests — validates the transition table without a database.
- *
- * Tests the `createStateMachine()` pure function directly.
- * No mocks, no I/O, no persistence — just the transition table.
- *
- * The 17 states in the booking lifecycle:
- *   DRAFT_PACKAGE, QUOTE_GENERATED, QUOTE_EXPIRED, PAYMENT_PENDING,
- *   PAYMENT_FAILED, PAYMENT_PAID, BOOKING_PENDING_MANUAL_CONFIRMATION,
- *   SUPPLIER_CONFIRMATION_PENDING, BOOKING_CONFIRMED, DOCUMENTS_GENERATING,
- *   DOCUMENTS_GENERATED, CUSTOMER_NOTIFIED, CANCEL_REQUESTED, CANCELLED,
- *   REFUND_PENDING, REFUNDED, FAILED
- */
-
 import { describe, it, expect } from 'vitest';
 import {
   createStateMachine,
@@ -22,18 +8,8 @@ import { InvalidTransitionError } from './error-handler.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-/** All 17 valid booking states. */
+/** All 8 valid booking states. */
 const ALL_STATES = Object.keys(TRANSITION_TABLE) as BookingState[];
-
-/** Not reachable from DRAFT_PACKAGE via the current transition table. */
-const UNREACHABLE_FROM_DRAFT: BookingState[] = [
-  'BOOKING_PENDING_MANUAL_CONFIRMATION', // legacy DB rows only
-  'SUPPLIER_CONFIRMATION_PENDING', // optional supplier path (no inbound edge yet)
-  'CANCEL_REQUESTED',
-  'CANCELLED',
-  'REFUND_PENDING',
-  'REFUNDED',
-];
 
 /** BFS over the transition table from a start state. */
 function reachableStates(start: BookingState): Set<BookingState> {
@@ -71,8 +47,8 @@ describe('State Machine — Pure Transition Table Validation', () => {
 
   // ── Table structure ─────────────────────────────────────────────────
 
-  it('has exactly 17 defined states', () => {
-    expect(ALL_STATES).toHaveLength(17);
+  it('has exactly 8 defined states', () => {
+    expect(ALL_STATES).toHaveLength(8);
   });
 
   it('every outgoing target is a valid key in the transition table', () => {
@@ -143,7 +119,6 @@ describe('State Machine — Pure Transition Table Validation', () => {
     for (const state of ALL_STATES) {
       const selfTransition = TRANSITION_TABLE[state].some((t) => t.to === state);
       if (selfTransition) {
-        // If a self-transition exists, it must be explicitly in the table
         expect(machine.isValidTransition(state, state)).toBe(true);
       } else {
         expect(machine.isValidTransition(state, state)).toBe(false);
@@ -187,24 +162,14 @@ describe('State Machine — Pure Transition Table Validation', () => {
 
   // ── Reachability invariants ─────────────────────────────────────────
 
-  it('DRAFT_PACKAGE can reach all expected terminal states via valid transitions', () => {
-    const reachable = reachableStates('DRAFT_PACKAGE');
+  it('Draft can reach all expected terminal states via valid transitions', () => {
+    const reachable = reachableStates('Draft');
     const expectedTerminals: BookingState[] = [
-      'CUSTOMER_NOTIFIED',
-      'PAYMENT_FAILED',
-      'FAILED',
-      'QUOTE_EXPIRED',
+      'Refunded',
+      'Failed',
     ];
     for (const terminal of expectedTerminals) {
       expect(reachable.has(terminal)).toBe(true);
-    }
-  });
-
-  it('DRAFT_PACKAGE reaches every non-legacy state on the happy path', () => {
-    const reachable = reachableStates('DRAFT_PACKAGE');
-    for (const state of ALL_STATES) {
-      if (UNREACHABLE_FROM_DRAFT.includes(state)) continue;
-      expect(reachable.has(state)).toBe(true);
     }
   });
 
@@ -228,10 +193,10 @@ describe('State Machine — Pure Transition Table Validation', () => {
     }
   });
 
-  it('DRAFT_PACKAGE is the unique entry point (no transitions lead INTO it)', () => {
+  it('Draft is the unique entry point (no transitions lead INTO it)', () => {
     for (const from of ALL_STATES) {
       for (const { to } of TRANSITION_TABLE[from]) {
-        expect(to).not.toBe('DRAFT_PACKAGE');
+        expect(to).not.toBe('Draft');
       }
     }
   });
@@ -249,7 +214,6 @@ describe('State Machine — Pure Transition Table Validation', () => {
   });
 
   it('terminal states can still receive inbound transitions', () => {
-    // Every terminal state should have at least one incoming edge
     const terminalStates = ALL_STATES.filter((s) => TRANSITION_TABLE[s].length === 0);
     const incoming = new Map<BookingState, number>();
     for (const from of ALL_STATES) {
@@ -270,24 +234,16 @@ describe('State Machine — Pure Transition Table Validation', () => {
     }
   });
 
-  it('QUOTE_EXPIRED transition is one-way (no way back to QUOTE_GENERATED)', () => {
-    expect(machine.isValidTransition('QUOTE_EXPIRED', 'QUOTE_GENERATED')).toBe(false);
-    expect(machine.isValidTransition('QUOTE_EXPIRED', 'PAYMENT_PENDING')).toBe(false);
+  it('Failed is a terminal state (no recovery path)', () => {
+    expect(machine.validTransitions('Failed')).toEqual([]);
   });
 
-  it('PAYMENT_FAILED is a terminal state (no recovery path)', () => {
-    expect(machine.validTransitions('PAYMENT_FAILED')).toEqual([]);
-  });
-
-  it('happy path: DRAFT_PACKAGE → QUOTE_GENERATED → PAYMENT_PENDING → PAYMENT_PAID → ... → CUSTOMER_NOTIFIED', () => {
+  it('happy path: Draft → Requested → Confirmed → Paid → Ticketed/booked', () => {
     const happyPath: Array<[BookingState, BookingState, string]> = [
-      ['DRAFT_PACKAGE', 'QUOTE_GENERATED', 'quote_created'],
-      ['QUOTE_GENERATED', 'PAYMENT_PENDING', 'checkout_initiated'],
-      ['PAYMENT_PENDING', 'PAYMENT_PAID', 'webhook_success'],
-      ['PAYMENT_PAID', 'BOOKING_CONFIRMED', 'payment_confirmed'],
-      ['BOOKING_CONFIRMED', 'DOCUMENTS_GENERATING', 'system_auto'],
-      ['DOCUMENTS_GENERATING', 'DOCUMENTS_GENERATED', 'worker_complete'],
-      ['DOCUMENTS_GENERATED', 'CUSTOMER_NOTIFIED', 'notification_sent'],
+      ['Draft', 'Requested', 'booking_requested'],
+      ['Requested', 'Confirmed', 'booking_confirmed'],
+      ['Confirmed', 'Paid', 'payment_success'],
+      ['Paid', 'Ticketed/booked', 'ticket_issued'],
     ];
     for (const [from, to, expectedTrigger] of happyPath) {
       expect(machine.isValidTransition(from, to)).toBe(true);
@@ -296,16 +252,8 @@ describe('State Machine — Pure Transition Table Validation', () => {
     }
   });
 
-  it('refund path: CANCEL_REQUESTED → CANCELLED | REFUND_PENDING → REFUNDED', () => {
-    expect(machine.isValidTransition('CANCEL_REQUESTED', 'CANCELLED')).toBe(true);
-    expect(machine.isValidTransition('CANCEL_REQUESTED', 'REFUND_PENDING')).toBe(true);
-    expect(machine.isValidTransition('REFUND_PENDING', 'REFUNDED')).toBe(true);
-  });
-
-  it('legacy pending rows can settle to BOOKING_CONFIRMED', () => {
-    expect(
-      machine.isValidTransition('BOOKING_PENDING_MANUAL_CONFIRMATION', 'BOOKING_CONFIRMED'),
-    ).toBe(true);
+  it('refund path: Cancelled → Refunded', () => {
+    expect(machine.isValidTransition('Cancelled', 'Refunded')).toBe(true);
   });
 
   // ── Property-style exhaustive checks ────────────────────────────────
@@ -320,14 +268,13 @@ describe('State Machine — Pure Transition Table Validation', () => {
     }
   });
 
-  it('all 289 (17×17) possible state pairs are classified correctly', () => {
+  it('all 64 (8×8) possible state pairs are classified correctly', () => {
     let validCount = 0;
     let invalidCount = 0;
     for (const from of ALL_STATES) {
       for (const to of ALL_STATES) {
         const isValid = machine.isValidTransition(from, to);
         if (from === to) {
-          // Self-transitions: valid only if explicitly in table
           const inTable = TRANSITION_TABLE[from].some((t) => t.to === to);
           expect(isValid).toBe(inTable);
         } else {
@@ -338,7 +285,6 @@ describe('State Machine — Pure Transition Table Validation', () => {
         else invalidCount++;
       }
     }
-    // We should have a mix of both valid and invalid transitions
     expect(validCount).toBeGreaterThan(0);
     expect(invalidCount).toBeGreaterThan(0);
   });

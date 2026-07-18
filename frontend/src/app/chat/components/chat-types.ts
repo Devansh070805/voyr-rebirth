@@ -1,4 +1,4 @@
-﻿import type { ChatMessage, ToolCallData } from "@/types/chat";
+import type { ChatMessage, ToolCallData } from "@/types/chat";
 
 export interface DayPlan {
   day_number: number;
@@ -105,24 +105,35 @@ const EMPTY_STATE: TripState = {
  * Extract trip state from tool calls first (structured data), fall back to regex heuristic.
  */
 export function extractTripState(messages: ChatMessage[]): TripState {
-  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-  if (!lastAssistant) return EMPTY_STATE;
-
-  const itineraryCall = lastAssistant.toolCalls?.find(
-    (tc) => tc.name === "show_itinerary",
-  );
-  if (itineraryCall) {
-    return fromItineraryToolCall(itineraryCall);
+  const assistants = [...messages].filter((m) => m.role === "assistant").reverse();
+  if (assistants.length === 0) return EMPTY_STATE;
+  
+  for (const msg of assistants) {
+    const itineraryCall = msg.toolCalls?.find(tc => tc.name === "show_itinerary");
+    if (itineraryCall) return fromItineraryToolCall(itineraryCall);
   }
 
-  const budgetCall = lastAssistant.toolCalls?.find(
-    (tc) => tc.name === "show_budget_breakdown",
-  );
-  if (budgetCall) {
-    return fromBudgetToolCall(budgetCall, lastAssistant);
+  for (const msg of assistants) {
+    const budgetCall = msg.toolCalls?.find(tc => tc.name === "show_budget_breakdown");
+    if (budgetCall) return fromBudgetToolCall(budgetCall, msg);
   }
 
-  return extractFromProse(lastAssistant.content);
+  // Fallback to checking destination in hotel/activity tool calls
+  for (const msg of assistants) {
+    for (const tc of msg.toolCalls || []) {
+      if ((tc.name === "show_hotel_options" || tc.name === "show_activity_options") && (tc.arguments as any).destination) {
+        return { ...EMPTY_STATE, destination: (tc.arguments as any).destination };
+      }
+    }
+  }
+
+  // Fallback to prose
+  for (const msg of assistants) {
+    const proseState = extractFromProse(msg.content);
+    if (proseState.destination) return proseState;
+  }
+
+  return EMPTY_STATE;
 }
 
 function fromItineraryToolCall(tc: ToolCallData): TripState {

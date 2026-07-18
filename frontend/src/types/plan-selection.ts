@@ -14,7 +14,7 @@ export interface SelectedHotel extends SelectionCardMeta {
   location?: string;
   hotel_id?: number;
   vendor?: string;
-  source?: "curated" | "api";
+  source?: "curated" | "api" | "mock";
   listing_id?: string;
   cost_amount?: number;
   sell_amount?: number;
@@ -28,7 +28,7 @@ export interface SelectedActivity extends SelectionCardMeta {
   category: string;
   place_id?: string;
   address?: string;
-  source?: "curated" | "api";
+  source?: "curated" | "api" | "mock";
   listing_id?: string;
   price?: number;
   currency?: string;
@@ -42,7 +42,7 @@ export interface SelectedFlightRoute extends SelectionCardMeta {
   departure_iata: string;
   arrival_iata: string;
   label: string;
-  source?: "curated" | "api";
+  source?: "curated" | "api" | "mock";
   listing_id?: string;
   sell_amount?: number;
   cost_amount?: number;

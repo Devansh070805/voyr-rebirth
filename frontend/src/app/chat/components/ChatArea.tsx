@@ -172,7 +172,7 @@ export default function ChatArea({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-8 py-6"
       >
-        <div className="mx-auto max-w-[800px]">
+        <div className="mx-auto w-full max-w-7xl">
           {messages.map((msg) => (
             <div key={msg.id}>
               {msg.role === "assistant" ? (
@@ -180,7 +180,7 @@ export default function ChatArea({
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-violet-200 bg-violet-50 text-violet-600">
                     <PiLightningFill className="h-4 w-4" />
                   </div>
-                  <div className="min-w-0 max-w-[680px]">
+                  <div className="min-w-0 flex-1">
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="text-[15px] leading-relaxed text-slate-700">
                         <MarkdownContent content={msg.content} />
@@ -224,8 +224,8 @@ export default function ChatArea({
                 </div>
               ) : (
                 <div className="mb-6 flex justify-end animate-slide-up-sm">
-                  <div>
-                    <div className="max-w-[600px] rounded-2xl border border-violet-100 bg-violet-50 p-5 shadow-sm">
+                  <div className="max-w-[85%]">
+                    <div className="rounded-2xl border border-violet-100 bg-violet-50 p-5 shadow-sm inline-block w-full">
                       {/* Image attachment */}
                       {msg.imageUrl && (
                         <div className="mb-3">
@@ -291,7 +291,7 @@ export default function ChatArea({
 
       {/* Input bar */}
       <div className="px-8 pb-5">
-        <div className="mx-auto max-w-[800px]">
+        <div className="mx-auto w-full max-w-7xl">
           {/* Actions above input */}
           <div className="mb-3 flex justify-center gap-3 animate-fade-in">
             {isStreaming && (

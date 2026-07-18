@@ -72,7 +72,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'show_itinerary',
-    description: 'Display a day-by-day travel itinerary to the user. Call this when you have enough information to suggest a trip plan.',
+    description: 'Display a day-by-day travel itinerary to the user. ONLY call this when the user EXPLICITLY requests a day-by-day plan or itinerary.',
     parameters: {
       type: 'object',
       properties: {
