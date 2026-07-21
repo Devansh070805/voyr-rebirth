@@ -9,18 +9,27 @@ export function validateProductionEnvironment(): void {
   const required = [
     'JWT_SECRET',
     'DATABASE_URL',
-    'RESEND_API_KEY',
     'CORS_ORIGIN',
     'FRONTEND_URL',
+  ];
+
+  for (const key of required) {
+    if (!process.env[key]?.trim()) {
+      throw new Error(`${key} must be set in production`);
+    }
+  }
+
+  const warnings = [
+    'RESEND_API_KEY',
     'METRICS_TOKEN',
     'MAKCORPS_API_KEY',
     'GEOAPIFY_API_KEY',
     'AVIATION_STACK_API_KEY',
   ];
 
-  for (const key of required) {
+  for (const key of warnings) {
     if (!process.env[key]?.trim()) {
-      throw new Error(`${key} must be set in production`);
+      console.warn(`[WARNING] ${key} is missing. Some features may not work.`);
     }
   }
 
