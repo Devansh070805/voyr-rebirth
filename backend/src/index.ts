@@ -144,7 +144,7 @@ app.get('/metrics', (req, res) => {
 const alerting = getAlertingService();
 alerting.startPeriodicChecks();
 
-app.listen(PORT, () => {
+app.listen(Number(PORT), '0.0.0.0', () => {
   logger.info(`Voyr backend running on port ${PORT}`);
 });
 
