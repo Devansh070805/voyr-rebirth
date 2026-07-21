@@ -7,7 +7,7 @@ export const redisClient = createClient({
   url: process.env.REDIS_URL || 'redis://127.0.0.1:6379',
 });
 
-const isRedisRequired = process.env.NODE_ENV === 'production' || process.env.REDIS_REQUIRED === 'true';
+const isRedisRequired = process.env.REDIS_REQUIRED === 'true';
 
 redisClient.on('error', (err) => {
   if (isRedisRequired) {
