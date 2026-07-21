@@ -20,7 +20,7 @@
     "deploy:railway:env": "powershell -File scripts/railway-sync-env.ps1",
     "db:migrate": "npm run migrate:up --workspace=backend",
     "db:verify": "node backend/scripts/verify-db.mjs",
-    "prepare": "node -e \"if(process.env.HUSKY==='0')process.exit(0);require('child_process').execSync('husky',{stdio:'inherit'})\""
+    "prepare": "node -e \"if(process.env.CI === '1' || process.env.CI === 'true') process.exit(0); try { require('child_process').execSync('husky',{stdio:'inherit'}) } catch (e) {}\""
   },
   "engines": {
     "node": ">=20.0.0"
