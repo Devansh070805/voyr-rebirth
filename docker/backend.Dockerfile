@@ -1,4 +1,4 @@
-﻿# Monorepo backend image for Railway (includes @voyr/shared)
+# Monorepo backend image for Railway (includes @voyr/shared)
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -9,7 +9,7 @@ COPY tsconfig.base.json ./
 COPY shared ./shared
 COPY backend/package.json ./backend/
 
-RUN npm ci --workspace=@voyr/backend --include-workspace-root
+RUN npm install --workspace=@voyr/backend --include-workspace-root
 
 COPY backend/tsconfig.json ./backend/
 COPY backend/src ./backend/src/
@@ -32,7 +32,7 @@ COPY tsconfig.base.json ./
 COPY shared ./shared
 COPY backend/package.json ./backend/
 
-RUN npm ci --workspace=@voyr/backend --include-workspace-root --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm install --workspace=@voyr/backend --include-workspace-root --omit=dev --ignore-scripts && npm cache clean --force
 
 COPY --from=builder /app/backend/dist ./backend/dist
 COPY --from=builder /app/backend/src/db/migrations ./backend/src/db/migrations
